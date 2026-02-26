@@ -84,7 +84,7 @@ export const ecoService = {
     // AI ile kişiselleştirilmiş ipucu al
     async getAITip(): Promise<string> {
         try {
-            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+            const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
             const prompt = `Kısa ve motive edici bir çevre koruma ipucu yaz (maksimum 2 cümle). Günlük hayatta uygulanabilir olsun. Türkçe yaz. Sadece ipucunu yaz, başka bir şey yazma.`;
 
