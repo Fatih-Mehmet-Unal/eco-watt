@@ -34,6 +34,7 @@ cd ios && pod install && cd ..
 SUPABASE_URL=https://your-project-id.supabase.co
 SUPABASE_ANON_KEY=your_supabase_anon_key_here
 NODE_ENV=development
+GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
 #### Supabase projesinde schema'yı oluşturun:
