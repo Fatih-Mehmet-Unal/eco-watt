@@ -24,6 +24,7 @@
     "react-native-image-picker": "^8.2.1",
     "react-native-safe-area-context": "^5.6.1",
     "react-native-screens": "^4.16.0",
+    "react-native-tflite": "^0.0.2",
     "react-native-url-polyfill": "^2.0.0",
     "react-native-vector-icons": "^10.3.0"
   },

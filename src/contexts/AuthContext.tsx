@@ -65,52 +65,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         },
       },
     });
-
-    // Eğer signup başarılı ise ve trigger çalışmadıysa manuel olarak profile oluştur
-    if (data.user && !error) {
-      try {
-        let company = null;
-
-        // Sadece kurumsal kayıt ise şirket işlemleri yap
-        if (companyName && companyCode) {
-          // Önce şirket var mı kontrol et, yoksa oluştur
-          let { data: existingCompany } = await supabase
-            .from('companies')
-            .select('id')
-            .eq('code', companyCode)
-            .single();
-
-          company = existingCompany;
-
-          if (!company) {
-            const { data: newCompany } = await supabase
-              .from('companies')
-              .insert({
-                name: companyName,
-                code: companyCode,
-              })
-              .select('id')
-              .single();
-            company = newCompany;
-          }
-        }
-
-        // User profile oluştur (Kurumsal ise company_id ile, değilse null)
-        await supabase
-          .from('user_profiles')
-          .insert({
-            id: data.user.id,
-            company_id: company?.id ?? null,
-            email: email,
-            company_name: companyName ?? null,
-            company_code: companyCode ?? null,
-          });
-      } catch (profileError) {
-        console.log('Profile creation error (non-critical):', profileError);
-        // Profile oluşturma hatası signup'ı iptal etmez
-      }
-    }
-
+    // Profil ve şirket işlemleri trigger ile otomatik yapılacak
     return { data, error };
   };
 

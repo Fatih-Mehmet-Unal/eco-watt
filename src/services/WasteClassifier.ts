@@ -1,5 +1,7 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { GEMINI_API_KEY } from '@env';
+
+import Tflite from 'react-native-tflite';
+import { Platform } from 'react-native';
+
 
 export interface WasteClassificationResult {
     type: string;
@@ -8,56 +10,68 @@ export interface WasteClassificationResult {
     confidence: number;
 }
 
-// Initialize Gemini API
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+const tflite = new Tflite();
+const modelPath = Platform.OS === 'ios' ? 'model.tflite' : 'src/assets/model.tflite';
+const labels = ['cardboard', 'glass', 'metal', 'paper', 'plastic', 'trash'];
 
-export const classifyImage = async (imageUri: string, base64?: string): Promise<WasteClassificationResult> => {
-    if (!base64) {
-        throw new Error('Image base64 data is required for API analysis');
-    }
+// Modeli yükle (uygulama başında bir kez çağrılmalı)
+tflite.loadModel({
+    model: modelPath,
+    labels: labels,
+}, (err: any, res: any) => {
+    if (err) console.error('TFLite load error:', err);
 
-    try {
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+});
 
-        const prompt = `
-      Analyze this image and identify the waste item.
-      Return ONLY a valid JSON object with the following structure:
-      {
-        "type": "Short waste type (e.g., Plastic, Paper, Metal, Glass, Organic, Electronic)",
-        "binColor": "Color of the recycling bin (e.g., Yellow for Plastic, Blue for Paper, Green for Glass, Gray for Metal, Brown for Organic, Orange for E-waste)",
-        "description": "A short, helpful description (max 2 sentences) in Turkish explaining how to recycle it (e.g., 'Wash and crush before throwing').",
-        "confidence": 0.95 (estimated confidence between 0 and 1)
-      }
-      If the image is not a waste item, set type to "Unknown" and description to "Atık tespit edilemedi.".
-      Respond in Turkish for the description and type fields.
-    `;
 
-        const imagePart = {
-            inlineData: {
-                data: base64,
-                mimeType: "image/jpeg",
-            },
-        };
-
-        const result = await model.generateContent([prompt, imagePart]);
-        const response = await result.response;
-        const text = response.text();
-
-        // Clean up the text to ensure it's valid JSON (sometimes models add markdown formatting)
-        const jsonString = text.replace(/```json/g, '').replace(/```/g, '').trim();
-
-        const parsedData = JSON.parse(jsonString);
-
-        return {
-            type: parsedData.type || 'Bilinmiyor',
-            binColor: parsedData.binColor || '#808080',
-            description: parsedData.description || 'Analiz sonucu alınamadı.',
-            confidence: parsedData.confidence || 0,
-        };
-
-    } catch (error) {
-        console.error('Gemini API Error:', error);
-        // Fallback or rethrow
-        throw new Error('Atık analizi yapılamadı. Lütfen tekrar deneyin.');
-    }
+export const classifyImage = async (imageUri: string): Promise<WasteClassificationResult> => {
+    return new Promise((resolve, reject) => {
+        tflite.runModelOnImage({
+            path: imageUri,
+            imageMean: 0,
+            imageStd: 255,
+            numResults: 6,
+            threshold: 0.05,
+        }, (err: any, results: any[]) => {
+            if (err) {
+                console.error('TFLite inference error:', err);
+                reject('Atık analizi yapılamadı.');
+                return;
+            }
+            if (!results || results.length === 0) {
+                resolve({
+                    type: 'Bilinmiyor',
+                    binColor: '#808080',
+                    description: 'Atık tespit edilemedi.',
+                    confidence: 0,
+                });
+                return;
+            }
+            // En yüksek olasılıklı sonucu al
+            const top = results[0];
+            // Bin color ve description mapping
+            const binColors: { [key: string]: string } = {
+                plastic: 'Yellow',
+                paper: 'Blue',
+                glass: 'Green',
+                metal: 'Gray',
+                cardboard: 'Brown',
+                trash: 'Black',
+            };
+            const descriptions: { [key: string]: string } = {
+                plastic: 'Plastiği yıkayıp sıkıştırarak atın.',
+                paper: 'Kağıdı temiz ve kuru şekilde mavi kutuya atın.',
+                glass: 'Camı kırmadan yeşil kutuya atın.',
+                metal: 'Metali ezip gri kutuya atın.',
+                cardboard: 'Kartonu katlayıp kahverengi kutuya atın.',
+                trash: 'Çöpü siyah kutuya atın.',
+            };
+            resolve({
+                type: top.label || 'Bilinmiyor',
+                binColor: binColors[top.label] || '#808080',
+                description: descriptions[top.label] || 'Analiz sonucu alınamadı.',
+                confidence: top.confidence || 0,
+            });
+        });
+    });
 };
