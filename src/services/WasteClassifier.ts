@@ -103,11 +103,15 @@ async function getModel(): Promise<TensorflowModel> {
 /**
  * Decode a base64-encoded JPEG into raw RGBA pixel data using jpeg-js,
  * then resize to IMG_SIZE x IMG_SIZE and convert to a Float32Array
- * with MobileNetV2 preprocessing: pixel = (pixel / 127.5) - 1.0
+ * of raw RGB values in [0..255].
+ *
+ * Note: The exported model (see train_and_convert_example.py) already contains
+ * `keras.applications.mobilenet_v2.preprocess_input`, so we must NOT apply it twice.
  */
 function decodeAndPreprocess(base64: string): Float32Array {
     // 1. Decode base64 → raw JPEG bytes
-    const jpegBuffer = Buffer.from(base64, 'base64');
+    const normalizedBase64 = base64.trim().replace(/^data:.*;base64,/, '');
+    const jpegBuffer = Buffer.from(normalizedBase64, 'base64');
 
     // 2. Decode JPEG → RGBA pixel data
     const rawImage = jpeg.decode(jpegBuffer, { useTArray: true, formatAsRGBA: true });
@@ -129,14 +133,31 @@ function decodeAndPreprocess(base64: string): Float32Array {
 
             const dstIdx = (y * IMG_SIZE + x) * 3; // RGB stride
 
-            // MobileNetV2 preprocess_input: (pixel / 127.5) - 1.0
-            float32[dstIdx]     = (rgbaPixels[srcIdx]     / 127.5) - 1.0; // R
-            float32[dstIdx + 1] = (rgbaPixels[srcIdx + 1] / 127.5) - 1.0; // G
-            float32[dstIdx + 2] = (rgbaPixels[srcIdx + 2] / 127.5) - 1.0; // B
+            // Keep raw [0..255] RGB. Model handles MobileNetV2 preprocessing internally.
+            float32[dstIdx]     = rgbaPixels[srcIdx];     // R
+            float32[dstIdx + 1] = rgbaPixels[srcIdx + 1]; // G
+            float32[dstIdx + 2] = rgbaPixels[srcIdx + 2]; // B
         }
     }
 
     return float32;
+}
+
+/**
+ * Ensure a plain ArrayBuffer for native bridge APIs.
+ */
+function toArrayBuffer(view: ArrayBufferView): ArrayBuffer {
+    const buffer = view.buffer;
+    if (buffer instanceof ArrayBuffer) {
+        if (view.byteOffset === 0 && view.byteLength === buffer.byteLength) {
+            return buffer;
+        }
+        return buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
+    }
+
+    const copy = new ArrayBuffer(view.byteLength);
+    new Uint8Array(copy).set(new Uint8Array(buffer, view.byteOffset, view.byteLength));
+    return copy;
 }
 
 /**
@@ -190,19 +211,42 @@ export const classifyImage = async (
         // 3. Run inference
         console.log('[WasteClassifier] Running inference...');
         // react-native-fast-tflite v3+ expects ArrayBuffer[], not TypedArray[]
-        const output = await loadedModel.run([inputData.buffer]);
+        const inputTensor = loadedModel.inputs?.[0];
+        const inputDataType = inputTensor?.dataType;
+
+        let inputBuffer: ArrayBuffer;
+        if (inputDataType === 'uint8') {
+            const uint8 = new Uint8Array(inputData.length);
+            for (let i = 0; i < inputData.length; i++) {
+                const v = Math.round(inputData[i]);
+                uint8[i] = v < 0 ? 0 : v > 255 ? 255 : v;
+            }
+            inputBuffer = toArrayBuffer(uint8);
+        } else {
+            // Default: float32 model input.
+            inputBuffer = toArrayBuffer(inputData);
+        }
+
+        const output = await loadedModel.run([inputBuffer]);
         
-        // Output is an ArrayBuffer, convert it to Float32Array
-        const outputArray = new Float32Array(output[0]);
+        const outputTensor = loadedModel.outputs?.[0];
+        const outputDataType = outputTensor?.dataType;
+
+        // Output is an ArrayBuffer; decode based on reported dtype.
+        let scores: number[];
+        if (outputDataType === 'uint8') {
+            scores = Array.from(new Uint8Array(output[0]));
+        } else if (outputDataType === 'int8') {
+            scores = Array.from(new Int8Array(output[0]));
+        } else {
+            scores = Array.from(new Float32Array(output[0]));
+        }
 
         // 4. Convert to probabilities (softmax if needed)
         let probabilities: number[];
-        const sum = Array.from(outputArray).reduce((a, b) => a + b, 0);
-        if (Math.abs(sum - 1.0) > 0.1) {
-            probabilities = softmax(outputArray);
-        } else {
-            probabilities = Array.from(outputArray);
-        }
+        const sum = scores.reduce((a, b) => a + b, 0);
+        const looksLikeProbabilities = scores.every(v => v >= 0 && v <= 1) && Math.abs(sum - 1.0) <= 0.05;
+        probabilities = looksLikeProbabilities ? scores : softmax(scores);
 
         // 5. Get top prediction
         const topIdx = argmax(probabilities);

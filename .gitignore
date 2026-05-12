@@ -1,7 +1,7 @@
 # OSX
 #
 .DS_Store
-
+.venv/
 # Xcode
 #
 build/
@@ -25,6 +25,8 @@ DerivedData
 # Android/IntelliJ
 #
 build/
+.venv
+
 .idea
 .gradle
 local.properties
