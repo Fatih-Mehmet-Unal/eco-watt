@@ -4,10 +4,10 @@ import { Buffer } from 'buffer';
 import { supabase } from '../lib/supabase';
 import { WasteLabelKey } from './WasteClassifier';
 
-export const FEEDBACK_CONFIDENCE_THRESHOLD = 0.6;
-export const FEEDBACK_SAMPLING_RATE = 0.2;
+export const FEEDBACK_CONFIDENCE_THRESHOLD = 0.90;
+export const FEEDBACK_SAMPLING_RATE = 0; // Not used anymore
 export const FEEDBACK_QUEUE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-export const MODEL_DEPLOYMENT_TAG = 'v0.0.1-tflite-fp32';
+export const MODEL_DEPLOYMENT_TAG = 'v0.0.2-tflite-fp32';
 
 const FEEDBACK_QUEUE_KEY = 'waste_feedback_queue_v1';
 const FEEDBACK_CONSENT_KEY = 'waste_feedback_image_consent_v1';
@@ -62,10 +62,8 @@ export interface WasteFeedbackQueueItem {
 }
 
 export const shouldShowFeedback = (confidence: number): boolean => {
-    if (confidence < FEEDBACK_CONFIDENCE_THRESHOLD) {
-        return true;
-    }
-    return Math.random() < FEEDBACK_SAMPLING_RATE;
+    // Sadece oran 90'ın altındaysa göster, rastgele sorma
+    return confidence < FEEDBACK_CONFIDENCE_THRESHOLD;
 };
 
 export const getStoredImageConsent = async (): Promise<boolean | null> => {
