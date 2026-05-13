@@ -1,24 +1,27 @@
 import { loadTensorflowModel, TensorflowModel } from 'react-native-fast-tflite';
-import { Platform } from 'react-native';
 import { Buffer } from 'buffer';
 import * as jpeg from 'jpeg-js';
 
+export type WasteLabelKey = 'cardboard' | 'glass' | 'metal' | 'paper' | 'plastic' | 'trash';
+
 export interface WasteClassificationResult {
     type: string;
+    labelKey: WasteLabelKey;
     binColor: string;
     description: string;
     confidence: number;
+    probabilities?: Record<WasteLabelKey, number>;
 }
 
 // Model labels — must match training class order from train_and_convert_example.py
 // Classes come from: tf.keras.utils.image_dataset_from_directory (alphabetical)
-const labels = ['cardboard', 'glass', 'metal', 'paper', 'plastic', 'trash'];
+export const WASTE_LABELS: WasteLabelKey[] = ['cardboard', 'glass', 'metal', 'paper', 'plastic', 'trash'];
 
 // Model input dimensions (MobileNetV2)
 const IMG_SIZE = 224;
 
 // Turkish display names
-const labelDisplayNames: { [key: string]: string } = {
+export const WASTE_LABEL_DISPLAY_NAMES: Record<WasteLabelKey, string> = {
     cardboard: 'Karton',
     glass: 'Cam',
     metal: 'Metal',
@@ -28,7 +31,7 @@ const labelDisplayNames: { [key: string]: string } = {
 };
 
 // Bin colors for each waste type
-const binColors: { [key: string]: string } = {
+const binColors: Record<WasteLabelKey, string> = {
     plastic: '#FFD700',   // Yellow
     paper: '#4169E1',     // Blue
     glass: '#228B22',     // Green
@@ -38,7 +41,7 @@ const binColors: { [key: string]: string } = {
 };
 
 // Turkish descriptions for disposal
-const descriptions: { [key: string]: string } = {
+const descriptions: Record<WasteLabelKey, string> = {
     plastic: 'Plastiği yıkayıp sıkıştırarak sarı kutuya atın.',
     paper: 'Kağıdı temiz ve kuru şekilde mavi kutuya atın.',
     glass: 'Camı kırmadan yeşil kutuya atın.',
@@ -134,7 +137,7 @@ function decodeAndPreprocess(base64: string): Float32Array {
             const dstIdx = (y * IMG_SIZE + x) * 3; // RGB stride
 
             // Keep raw [0..255] RGB. Model handles MobileNetV2 preprocessing internally.
-            float32[dstIdx]     = rgbaPixels[srcIdx];     // R
+            float32[dstIdx] = rgbaPixels[srcIdx];     // R
             float32[dstIdx + 1] = rgbaPixels[srcIdx + 1]; // G
             float32[dstIdx + 2] = rgbaPixels[srcIdx + 2]; // B
         }
@@ -228,7 +231,7 @@ export const classifyImage = async (
         }
 
         const output = await loadedModel.run([inputBuffer]);
-        
+
         const outputTensor = loadedModel.outputs?.[0];
         const outputDataType = outputTensor?.dataType;
 
@@ -251,17 +254,23 @@ export const classifyImage = async (
         // 5. Get top prediction
         const topIdx = argmax(probabilities);
         const confidence = probabilities[topIdx];
-        const label = labels[topIdx] || 'trash';
+        const labelKey = WASTE_LABELS[topIdx] || 'trash';
+        const probabilitiesByLabel = {} as Record<WasteLabelKey, number>;
+        WASTE_LABELS.forEach((key, index) => {
+            probabilitiesByLabel[key] = probabilities[index] ?? 0;
+        });
 
-        console.log('[WasteClassifier] Results:', labels.map((l, i) =>
+        console.log('[WasteClassifier] Results:', WASTE_LABELS.map((l, i) =>
             `${l}: ${(probabilities[i] * 100).toFixed(1)}%`
         ).join(', '));
 
         return {
-            type: labelDisplayNames[label] || label,
-            binColor: binColors[label] || '#808080',
-            description: descriptions[label] || 'Analiz sonucu alınamadı.',
+            type: WASTE_LABEL_DISPLAY_NAMES[labelKey] || labelKey,
+            labelKey,
+            binColor: binColors[labelKey] || '#808080',
+            description: descriptions[labelKey] || 'Analiz sonucu alınamadı.',
             confidence,
+            probabilities: probabilitiesByLabel,
         };
     } catch (error: any) {
         console.error('[WasteClassifier] Error:', error);
