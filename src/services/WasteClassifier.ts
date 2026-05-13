@@ -1,6 +1,7 @@
 import { loadTensorflowModel, TensorflowModel } from 'react-native-fast-tflite';
 import { Buffer } from 'buffer';
 import * as jpeg from 'jpeg-js';
+import { Platform, Image } from 'react-native'; // Platform ve Image'ı import edin
 
 export type WasteLabelKey = 'cardboard' | 'glass' | 'metal' | 'paper' | 'plastic' | 'trash';
 
@@ -62,40 +63,20 @@ async function getModel(): Promise<TensorflowModel> {
 
     if (!modelLoading) {
         modelLoading = (async () => {
-            // First, try the require() approach (Metro bundled asset)
-            const modelSource = require('../assets/model.tflite');
-            console.log('[WasteClassifier] Model source from require():', modelSource, typeof modelSource);
+            console.log('[WasteClassifier] Downloading model from GitHub CDN...');
+            
+            // Üçüncü adımda tarayıcıdan kopyaladığınız RAW linkini buraya yapıştırın
+            const remoteUrl = 'https://github.com/Fatih-Mehmet-Unal/model/raw/refs/heads/main/model.tflite';
 
-            try {
-                const loaded = await loadTensorflowModel(modelSource, []);
-                model = loaded;
-                console.log('[WasteClassifier] Model loaded via require()');
-                console.log('[WasteClassifier] Inputs:', JSON.stringify(loaded.inputs));
-                console.log('[WasteClassifier] Outputs:', JSON.stringify(loaded.outputs));
-                return loaded;
-            } catch (requireErr) {
-                console.warn('[WasteClassifier] require() failed, trying bundle path...', requireErr);
-            }
-
-            // Fallback: try loading from iOS bundle path directly
-            // The model.tflite must be in Xcode's "Copy Bundle Resources"
-            try {
-                const loaded = await loadTensorflowModel(
-                    { url: 'model.tflite' },
-                    []
-                );
-                model = loaded;
-                console.log('[WasteClassifier] Model loaded via bundle path');
-                console.log('[WasteClassifier] Inputs:', JSON.stringify(loaded.inputs));
-                console.log('[WasteClassifier] Outputs:', JSON.stringify(loaded.outputs));
-                return loaded;
-            } catch (bundleErr) {
-                console.error('[WasteClassifier] Bundle path also failed:', bundleErr);
-                throw bundleErr;
-            }
+            // Kütüphaneye doğrudan uzak URL nesnesini veriyoruz
+            const loaded = await loadTensorflowModel({ url: remoteUrl }, []);
+            
+            model = loaded;
+            console.log('[WasteClassifier] Model downloaded and loaded successfully into memory!');
+            return loaded;
         })().catch((err) => {
             modelLoading = null;
-            console.error('[WasteClassifier] Model load error:', err);
+            console.error('[WasteClassifier] Remote GitHub Model load error:', err);
             throw err;
         });
     }
