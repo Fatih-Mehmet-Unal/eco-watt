@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     View,
     Text,
@@ -13,9 +13,23 @@ import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../types/navigation';
 import { Colors } from '../constants/Colors';
-import { classifyImage, WasteClassificationResult } from '../services/WasteClassifier';
+import {
+    classifyImage,
+    WasteClassificationResult,
+    WASTE_LABELS,
+    WASTE_LABEL_DISPLAY_NAMES,
+    WasteLabelKey,
+} from '../services/WasteClassifier';
 import { useAuth } from '../contexts/AuthContext';
 import { greenPointsService, POINTS_VALUES } from '../services/greenPointsService';
+import {
+    buildFeedbackItem,
+    enqueueFeedback,
+    flushFeedbackQueue,
+    getStoredImageConsent,
+    setStoredImageConsent,
+    shouldShowFeedback,
+} from '../services/wasteFeedbackService';
 
 type WasteClassificationScreenNavigationProp = StackNavigationProp<RootStackParamList, 'WasteClassification'>;
 
@@ -31,6 +45,20 @@ const WasteClassificationScreen: React.FC<Props> = ({ navigation }) => {
     const [base64Image, setBase64Image] = useState<string | undefined>(undefined);
     const [imageMimeType, setImageMimeType] = useState<string | undefined>(undefined);
     const [pointsEarned, setPointsEarned] = useState<number | null>(null);
+    const [showFeedback, setShowFeedback] = useState(false);
+    const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+    const [showCorrectionOptions, setShowCorrectionOptions] = useState(false);
+    const [sendingFeedback, setSendingFeedback] = useState(false);
+
+    useEffect(() => {
+        if (!user?.id) {
+            return;
+        }
+
+        flushFeedbackQueue(user.id).catch((error) => {
+            console.log('Feedback flush failed:', error);
+        });
+    }, [user?.id]);
 
     const handleImageSelection = async (type: 'camera' | 'gallery') => {
         const options = {
@@ -63,9 +91,82 @@ const WasteClassificationScreen: React.FC<Props> = ({ navigation }) => {
                 setResult(null);
             } else {
                 setImageMimeType(undefined);
+                setShowFeedback(false);
+                setFeedbackSubmitted(false);
+                setShowCorrectionOptions(false);
             }
         } catch (error) {
             Alert.alert('Hata', 'Beklenmeyen bir hata oluştu');
+        }
+    };
+
+    const requestImageConsent = async (): Promise<boolean> => {
+        const stored = await getStoredImageConsent();
+        if (stored !== null) {
+            return stored;
+        }
+
+        return new Promise((resolve) => {
+            Alert.alert(
+                'Fotoğraf Paylaşımı',
+                'Yanlış tahminleri iyileştirmek için fotoğrafınızı paylaşabilir misiniz?',
+                [
+                    {
+                        text: 'Hayır',
+                        style: 'cancel',
+                        onPress: () => {
+                            setStoredImageConsent(false).catch(() => undefined);
+                            resolve(false);
+                        },
+                    },
+                    {
+                        text: 'Evet',
+                        onPress: () => {
+                            setStoredImageConsent(true).catch(() => undefined);
+                            resolve(true);
+                        },
+                    },
+                ],
+                {
+                    cancelable: true,
+                    onDismiss: () => {
+                        setStoredImageConsent(false).catch(() => undefined);
+                        resolve(false);
+                    },
+                }
+            );
+        });
+    };
+
+    const submitFeedback = async (isCorrect: boolean, correctLabelKey?: WasteLabelKey) => {
+        if (!user?.id || !result) {
+            return;
+        }
+
+        setSendingFeedback(true);
+        try {
+            const consentImageUpload = isCorrect ? false : await requestImageConsent();
+            const item = buildFeedbackItem({
+                userId: user.id,
+                predictedLabelKey: result.labelKey,
+                predictedConfidence: result.confidence,
+                predictedScores: result.probabilities,
+                isCorrect,
+                correctLabelKey,
+                consentImageUpload,
+                imageBase64: !isCorrect && consentImageUpload ? base64Image : undefined,
+            });
+
+            await enqueueFeedback(item);
+            await flushFeedbackQueue(user.id);
+
+            setFeedbackSubmitted(true);
+            setShowFeedback(false);
+            setShowCorrectionOptions(false);
+        } catch (error) {
+            Alert.alert('Hata', 'Geri bildirim kaydedilemedi. Daha sonra tekrar deneyin.');
+        } finally {
+            setSendingFeedback(false);
         }
     };
 
@@ -80,6 +181,9 @@ const WasteClassificationScreen: React.FC<Props> = ({ navigation }) => {
         try {
             const classificationResult = await classifyImage(selectedImage, base64Image, imageMimeType);
             setResult(classificationResult);
+            setShowFeedback(shouldShowFeedback(classificationResult.confidence));
+            setFeedbackSubmitted(false);
+            setShowCorrectionOptions(false);
 
             // Başarılı sınıflandırma için yeşil puan ekle
             if (user?.id && classificationResult.type !== 'Unknown') {
@@ -157,6 +261,46 @@ const WasteClassificationScreen: React.FC<Props> = ({ navigation }) => {
                             <View style={styles.pointsEarnedBadge}>
                                 <Text style={styles.pointsEarnedText}>+{pointsEarned} Yeşil Puan Kazandın! 🌱</Text>
                             </View>
+                        )}
+                        {showFeedback && !feedbackSubmitted && (
+                            <View style={styles.feedbackContainer}>
+                                <Text style={styles.feedbackPrompt}>Sonuç doğru mu?</Text>
+                                <View style={styles.feedbackButtons}>
+                                    <TouchableOpacity
+                                        style={[styles.feedbackButton, styles.feedbackPositive]}
+                                        onPress={() => submitFeedback(true)}
+                                        disabled={sendingFeedback}>
+                                        <Text style={styles.feedbackButtonText}>👍 Doğru</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={[styles.feedbackButton, styles.feedbackNegative]}
+                                        onPress={() => setShowCorrectionOptions(true)}
+                                        disabled={sendingFeedback}>
+                                        <Text style={styles.feedbackButtonText}>👎 Yanlış</Text>
+                                    </TouchableOpacity>
+                                </View>
+                                {showCorrectionOptions && (
+                                    <View style={styles.correctionContainer}>
+                                        <Text style={styles.correctionPrompt}>Doğru sınıfı seçin</Text>
+                                        <View style={styles.correctionGrid}>
+                                            {WASTE_LABELS.map((labelKey) => (
+                                                <TouchableOpacity
+                                                    key={labelKey}
+                                                    style={styles.correctionOption}
+                                                    onPress={() => submitFeedback(false, labelKey)}
+                                                    disabled={sendingFeedback}>
+                                                    <Text style={styles.correctionOptionText}>
+                                                        {WASTE_LABEL_DISPLAY_NAMES[labelKey]}
+                                                    </Text>
+                                                </TouchableOpacity>
+                                            ))}
+                                        </View>
+                                    </View>
+                                )}
+                            </View>
+                        )}
+                        {feedbackSubmitted && (
+                            <Text style={styles.feedbackThanks}>Geri bildirimin kaydedildi. Teşekkürler!</Text>
                         )}
                     </View>
                 </View>
@@ -301,6 +445,71 @@ const styles = StyleSheet.create({
         color: 'white',
         fontSize: 16,
         fontWeight: 'bold',
+        textAlign: 'center',
+    },
+    feedbackContainer: {
+        marginTop: 16,
+        paddingTop: 12,
+        borderTopWidth: 1,
+        borderTopColor: Colors.border,
+    },
+    feedbackPrompt: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: Colors.textDark,
+        marginBottom: 8,
+    },
+    feedbackButtons: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+    },
+    feedbackButton: {
+        flex: 0.48,
+        paddingVertical: 10,
+        borderRadius: 8,
+        alignItems: 'center',
+    },
+    feedbackPositive: {
+        backgroundColor: Colors.approved,
+    },
+    feedbackNegative: {
+        backgroundColor: Colors.rejected,
+    },
+    feedbackButtonText: {
+        color: 'white',
+        fontWeight: '600',
+    },
+    correctionContainer: {
+        marginTop: 12,
+    },
+    correctionPrompt: {
+        fontSize: 14,
+        color: Colors.secondary,
+        marginBottom: 8,
+    },
+    correctionGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+    },
+    correctionOption: {
+        backgroundColor: Colors.inputBackground,
+        borderRadius: 8,
+        paddingVertical: 8,
+        paddingHorizontal: 10,
+        borderWidth: 1,
+        borderColor: Colors.border,
+        marginRight: 8,
+        marginBottom: 8,
+    },
+    correctionOptionText: {
+        color: Colors.textDark,
+        fontSize: 13,
+        fontWeight: '600',
+    },
+    feedbackThanks: {
+        marginTop: 12,
+        color: Colors.primary,
+        fontWeight: '600',
         textAlign: 'center',
     },
 });

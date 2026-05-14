@@ -79,3 +79,10 @@ yarn-error.log
 .env
 android/app/google-services.json
 ios/GreenTransformApp/GoogleService-Info.plist
+
+# ML Model data
+ml-model/__pycache__/
+ml-model/dataset/
+ml-model/feedback_images/
+ml-model/merged_dataset/
+ml-model/output/

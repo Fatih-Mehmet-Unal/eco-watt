@@ -8,24 +8,29 @@ const g = globalThis as typeof globalThis & { Buffer?: typeof Buffer };
 if (!g.Buffer) {
     g.Buffer = Buffer;
 }
+import { Platform, Image } from 'react-native'; // Platform ve Image'ı import edin
+
+export type WasteLabelKey = 'cardboard' | 'glass' | 'metal' | 'paper' | 'plastic' | 'trash';
 
 export interface WasteClassificationResult {
     type: string;
+    labelKey: WasteLabelKey;
     binColor: string;
     description: string;
     confidence: number;
+    probabilities?: Record<WasteLabelKey, number>;
 }
 
 // Model labels — must match training class order from train_and_convert_example.py
 // Classes come from: tf.keras.utils.image_dataset_from_directory (alphabetical)
-const labels = ['cardboard', 'glass', 'metal', 'paper', 'plastic', 'trash'];
+export const WASTE_LABELS: WasteLabelKey[] = ['cardboard', 'glass', 'metal', 'paper', 'plastic', 'trash'];
 
 // Model input dimensions (MobileNetV2)
 const IMG_SIZE = 224;
 const JPEG_MIME_TYPES = new Set(['image/jpeg', 'image/jpg']);
 
 // Turkish display names
-const labelDisplayNames: { [key: string]: string } = {
+export const WASTE_LABEL_DISPLAY_NAMES: Record<WasteLabelKey, string> = {
     cardboard: 'Karton',
     glass: 'Cam',
     metal: 'Metal',
@@ -35,7 +40,7 @@ const labelDisplayNames: { [key: string]: string } = {
 };
 
 // Bin colors for each waste type
-const binColors: { [key: string]: string } = {
+const binColors: Record<WasteLabelKey, string> = {
     plastic: '#FFD700',   // Yellow
     paper: '#4169E1',     // Blue
     glass: '#228B22',     // Green
@@ -45,7 +50,7 @@ const binColors: { [key: string]: string } = {
 };
 
 // Turkish descriptions for disposal
-const descriptions: { [key: string]: string } = {
+const descriptions: Record<WasteLabelKey, string> = {
     plastic: 'Plastiği yıkayıp sıkıştırarak sarı kutuya atın.',
     paper: 'Kağıdı temiz ve kuru şekilde mavi kutuya atın.',
     glass: 'Camı kırmadan yeşil kutuya atın.',
@@ -116,40 +121,20 @@ async function getModel(): Promise<TensorflowModel> {
 
     if (!modelLoading) {
         modelLoading = (async () => {
-            // First, try the require() approach (Metro bundled asset)
-            const modelSource = require('../assets/model.tflite');
-            console.log('[WasteClassifier] Model source from require():', modelSource, typeof modelSource);
+            console.log('[WasteClassifier] Downloading model from GitHub CDN...');
+            
+            // Üçüncü adımda tarayıcıdan kopyaladığınız RAW linkini buraya yapıştırın
+            const remoteUrl = 'https://github.com/Fatih-Mehmet-Unal/model/raw/refs/heads/main/model.tflite';
 
-            try {
-                const loaded = await loadTensorflowModel(modelSource, []);
-                model = loaded;
-                console.log('[WasteClassifier] Model loaded via require()');
-                console.log('[WasteClassifier] Inputs:', JSON.stringify(loaded.inputs));
-                console.log('[WasteClassifier] Outputs:', JSON.stringify(loaded.outputs));
-                return loaded;
-            } catch (requireErr) {
-                console.warn('[WasteClassifier] require() failed, trying bundle path...', requireErr);
-            }
-
-            // Fallback: try loading from iOS bundle path directly
-            // The model.tflite must be in Xcode's "Copy Bundle Resources"
-            try {
-                const loaded = await loadTensorflowModel(
-                    { url: 'model.tflite' },
-                    []
-                );
-                model = loaded;
-                console.log('[WasteClassifier] Model loaded via bundle path');
-                console.log('[WasteClassifier] Inputs:', JSON.stringify(loaded.inputs));
-                console.log('[WasteClassifier] Outputs:', JSON.stringify(loaded.outputs));
-                return loaded;
-            } catch (bundleErr) {
-                console.error('[WasteClassifier] Bundle path also failed:', bundleErr);
-                throw bundleErr;
-            }
+            // Kütüphaneye doğrudan uzak URL nesnesini veriyoruz
+            const loaded = await loadTensorflowModel({ url: remoteUrl }, []);
+            
+            model = loaded;
+            console.log('[WasteClassifier] Model downloaded and loaded successfully into memory!');
+            return loaded;
         })().catch((err) => {
             modelLoading = null;
-            console.error('[WasteClassifier] Model load error:', err);
+            console.error('[WasteClassifier] Remote GitHub Model load error:', err);
             throw err;
         });
     }
@@ -207,7 +192,7 @@ function decodeAndPreprocess(base64: string): Float32Array {
             const dstIdx = (y * IMG_SIZE + x) * 3; // RGB stride
 
             // Keep raw [0..255] RGB. Model handles MobileNetV2 preprocessing internally.
-            float32[dstIdx]     = rgbaPixels[srcIdx];     // R
+            float32[dstIdx] = rgbaPixels[srcIdx];     // R
             float32[dstIdx + 1] = rgbaPixels[srcIdx + 1]; // G
             float32[dstIdx + 2] = rgbaPixels[srcIdx + 2]; // B
         }
@@ -300,7 +285,7 @@ export const classifyImage = async (
         }
 
         const output = await loadedModel.run([inputBuffer]);
-        
+
         const outputTensor = loadedModel.outputs?.[0];
         const outputDataType = outputTensor?.dataType;
 
@@ -323,17 +308,23 @@ export const classifyImage = async (
         // 5. Get top prediction
         const topIdx = argmax(probabilities);
         const confidence = probabilities[topIdx];
-        const label = labels[topIdx] || 'trash';
+        const labelKey = WASTE_LABELS[topIdx] || 'trash';
+        const probabilitiesByLabel = {} as Record<WasteLabelKey, number>;
+        WASTE_LABELS.forEach((key, index) => {
+            probabilitiesByLabel[key] = probabilities[index] ?? 0;
+        });
 
-        console.log('[WasteClassifier] Results:', labels.map((l, i) =>
+        console.log('[WasteClassifier] Results:', WASTE_LABELS.map((l, i) =>
             `${l}: ${(probabilities[i] * 100).toFixed(1)}%`
         ).join(', '));
 
         return {
-            type: labelDisplayNames[label] || label,
-            binColor: binColors[label] || '#808080',
-            description: descriptions[label] || 'Analiz sonucu alınamadı.',
+            type: WASTE_LABEL_DISPLAY_NAMES[labelKey] || labelKey,
+            labelKey,
+            binColor: binColors[labelKey] || '#808080',
+            description: descriptions[labelKey] || 'Analiz sonucu alınamadı.',
             confidence,
+            probabilities: probabilitiesByLabel,
         };
     } catch (error: any) {
         console.error('[WasteClassifier] Error:', error);
