@@ -1,7 +1,13 @@
 import { loadTensorflowModel, TensorflowModel } from 'react-native-fast-tflite';
-import { Platform } from 'react-native';
 import { Buffer } from 'buffer';
 import * as jpeg from 'jpeg-js';
+import ImageResizer from '@bam.tech/react-native-image-resizer';
+import RNFS from 'react-native-fs';
+
+const g = globalThis as typeof globalThis & { Buffer?: typeof Buffer };
+if (!g.Buffer) {
+    g.Buffer = Buffer;
+}
 
 export interface WasteClassificationResult {
     type: string;
@@ -16,6 +22,7 @@ const labels = ['cardboard', 'glass', 'metal', 'paper', 'plastic', 'trash'];
 
 // Model input dimensions (MobileNetV2)
 const IMG_SIZE = 224;
+const JPEG_MIME_TYPES = new Set(['image/jpeg', 'image/jpg']);
 
 // Turkish display names
 const labelDisplayNames: { [key: string]: string } = {
@@ -46,6 +53,56 @@ const descriptions: { [key: string]: string } = {
     cardboard: 'Kartonu katlayıp kahverengi kutuya atın.',
     trash: 'Genel çöpü siyah kutuya atın.',
 };
+
+function normalizeBase64(base64: string): string {
+    return base64.trim().replace(/^data:.*;base64,/, '');
+}
+
+function looksLikeJpeg(base64: string): boolean {
+    const normalized = normalizeBase64(base64);
+    return normalized.startsWith('/9j/');
+}
+
+function stripFileScheme(uri: string): string {
+    return uri.startsWith('file://') ? uri.slice(7) : uri;
+}
+
+async function ensureJpegBase64(
+    imageUri: string,
+    base64?: string,
+    mimeType?: string,
+): Promise<string> {
+    const normalizedMime = mimeType?.toLowerCase();
+    const isJpegMime = normalizedMime ? JPEG_MIME_TYPES.has(normalizedMime) : false;
+
+    if (base64 && (isJpegMime || looksLikeJpeg(base64))) {
+        return base64;
+    }
+
+    if (!imageUri) {
+        throw new Error('Görsel yolu bulunamadı. Lütfen tekrar seçin.');
+    }
+
+    try {
+        console.log('[WasteClassifier] Converting image to JPEG for model input...');
+        const resized = await ImageResizer.createResizedImage(
+            imageUri,
+            IMG_SIZE,
+            IMG_SIZE,
+            'JPEG',
+            92
+        );
+        const fileUri = resized?.uri ?? resized?.path;
+        if (!fileUri) {
+            throw new Error('Dönüştürülen görsel bulunamadı.');
+        }
+        const filePath = stripFileScheme(fileUri);
+        return await RNFS.readFile(filePath, 'base64');
+    } catch (err) {
+        console.error('[WasteClassifier] JPEG conversion failed:', err);
+        throw new Error('Görsel formatı desteklenmiyor veya dönüştürülemedi. Lütfen JPEG/PNG/WEBP kullanın.');
+    }
+}
 
 // Singleton model instance
 let model: TensorflowModel | null = null;
@@ -110,11 +167,27 @@ async function getModel(): Promise<TensorflowModel> {
  */
 function decodeAndPreprocess(base64: string): Float32Array {
     // 1. Decode base64 → raw JPEG bytes
-    const normalizedBase64 = base64.trim().replace(/^data:.*;base64,/, '');
-    const jpegBuffer = Buffer.from(normalizedBase64, 'base64');
+    const normalizedBase64 = normalizeBase64(base64);
+    let rawImage:
+        | {
+              width: number;
+              height: number;
+              data: Uint8Array;
+          }
+        | undefined;
 
-    // 2. Decode JPEG → RGBA pixel data
-    const rawImage = jpeg.decode(jpegBuffer, { useTArray: true, formatAsRGBA: true });
+    try {
+        const jpegBuffer = Buffer.from(normalizedBase64, 'base64');
+        // 2. Decode JPEG → RGBA pixel data
+        rawImage = (jpeg as any).decode(jpegBuffer, { useTArray: true, formatAsRGBA: true });
+    } catch (err) {
+        console.error('[WasteClassifier] JPEG decode failed:', err);
+        throw new Error('JPEG çözümleme başarısız. Lütfen farklı bir fotoğraf deneyin.');
+    }
+
+    if (!rawImage?.data) {
+        throw new Error('JPEG çözümleme başarısız. Lütfen farklı bir fotoğraf deneyin.');
+    }
     const { width, height, data: rgbaPixels } = rawImage;
 
     // 3. Bilinear-interpolation resize to IMG_SIZE x IMG_SIZE (RGB only, drop A)
@@ -189,24 +262,23 @@ function softmax(arr: ArrayLike<number>): number[] {
 /**
  * Classify a waste image using the on-device TFLite model.
  *
- * @param imageUri  - URI of the image (not directly used, kept for API compat)
- * @param base64    - Base64 encoded JPEG image data
+ * @param imageUri  - URI of the image (used for conversion when base64 is not JPEG)
+ * @param base64    - Base64 image data (JPEG/PNG/WEBP supported; converted to JPEG if needed)
+ * @param mimeType  - Optional MIME type from picker
  */
 export const classifyImage = async (
     imageUri: string,
     base64?: string,
+    mimeType?: string,
 ): Promise<WasteClassificationResult> => {
-    if (!base64) {
-        throw new Error('Base64 görüntü verisi gereklidir.');
-    }
-
     try {
         // 1. Load model (cached after first call)
         const loadedModel = await getModel();
 
         // 2. Decode JPEG and preprocess pixels
         console.log('[WasteClassifier] Preprocessing image...');
-        const inputData = decodeAndPreprocess(base64);
+        const jpegBase64 = await ensureJpegBase64(imageUri, base64, mimeType);
+        const inputData = decodeAndPreprocess(jpegBase64);
 
         // 3. Run inference
         console.log('[WasteClassifier] Running inference...');
@@ -265,6 +337,9 @@ export const classifyImage = async (
         };
     } catch (error: any) {
         console.error('[WasteClassifier] Error:', error);
-        throw new Error('Atık analizi yapılamadı. Lütfen tekrar deneyin.');
+        const message = error instanceof Error && error.message
+            ? error.message
+            : 'Atık analizi yapılamadı. Lütfen tekrar deneyin.';
+        throw new Error(message);
     }
 };

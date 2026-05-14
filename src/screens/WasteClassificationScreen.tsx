@@ -8,9 +8,8 @@ import {
     ScrollView,
     ActivityIndicator,
     Alert,
-    Platform,
 } from 'react-native';
-import { launchCamera, launchImageLibrary, ImagePickerResponse, Asset } from 'react-native-image-picker';
+import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../types/navigation';
 import { Colors } from '../constants/Colors';
@@ -30,6 +29,7 @@ const WasteClassificationScreen: React.FC<Props> = ({ navigation }) => {
     const [result, setResult] = useState<WasteClassificationResult | null>(null);
     const [loading, setLoading] = useState(false);
     const [base64Image, setBase64Image] = useState<string | undefined>(undefined);
+    const [imageMimeType, setImageMimeType] = useState<string | undefined>(undefined);
     const [pointsEarned, setPointsEarned] = useState<number | null>(null);
 
     const handleImageSelection = async (type: 'camera' | 'gallery') => {
@@ -55,10 +55,14 @@ const WasteClassificationScreen: React.FC<Props> = ({ navigation }) => {
                 return;
             }
 
-            if (response.assets && response.assets[0].uri) {
-                setSelectedImage(response.assets[0].uri);
-                setBase64Image(response.assets[0].base64);
+            const asset = response.assets?.[0];
+            if (asset?.uri) {
+                setSelectedImage(asset.uri);
+                setBase64Image(asset.base64);
+                setImageMimeType(asset.type);
                 setResult(null);
+            } else {
+                setImageMimeType(undefined);
             }
         } catch (error) {
             Alert.alert('Hata', 'Beklenmeyen bir hata oluştu');
@@ -66,7 +70,7 @@ const WasteClassificationScreen: React.FC<Props> = ({ navigation }) => {
     };
 
     const handleAnalyze = async () => {
-        if (!selectedImage || !base64Image) {
+        if (!selectedImage) {
             Alert.alert('Hata', 'Resim verisi bulunamadı.');
             return;
         }
@@ -74,7 +78,7 @@ const WasteClassificationScreen: React.FC<Props> = ({ navigation }) => {
         setLoading(true);
         setPointsEarned(null);
         try {
-            const classificationResult = await classifyImage(selectedImage, base64Image);
+            const classificationResult = await classifyImage(selectedImage, base64Image, imageMimeType);
             setResult(classificationResult);
 
             // Başarılı sınıflandırma için yeşil puan ekle
