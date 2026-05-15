@@ -133,6 +133,7 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
             <TextInput
               style={styles.input}
               placeholder="Email adresinizi girin"
+              placeholderTextColor={Colors.defaultStatus || Colors.secondary}
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -148,6 +149,7 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
                 <TextInput
                   style={styles.input}
                   placeholder="Şirket adınızı girin"
+                  placeholderTextColor={Colors.defaultStatus || Colors.secondary}
                   value={companyName}
                   onChangeText={setCompanyName}
                   autoCapitalize="words"
@@ -159,6 +161,7 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
                 <TextInput
                   style={styles.input}
                   placeholder="Şirket kodunuzu girin"
+                  placeholderTextColor={Colors.defaultStatus || Colors.secondary}
                   value={companyCode}
                   onChangeText={setCompanyCode}
                   autoCapitalize="characters"
@@ -172,6 +175,7 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
             <TextInput
               style={styles.input}
               placeholder="Şifrenizi girin"
+              placeholderTextColor={Colors.defaultStatus || Colors.secondary}
               value={password}
               onChangeText={setPassword}
               secureTextEntry
@@ -184,6 +188,7 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
             <TextInput
               style={styles.input}
               placeholder="Şifrenizi tekrar girin"
+              placeholderTextColor={Colors.defaultStatus || Colors.secondary}
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               secureTextEntry
@@ -266,6 +271,7 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 16,
     backgroundColor: Colors.inputBackground,
+    color: Colors.black,
   },
   registerButton: {
     backgroundColor: Colors.primary,
@@ -278,7 +284,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.secondary,
   },
   registerButtonText: {
-    color: 'white',
+    color: Colors.white,
     fontSize: 18,
     fontWeight: 'bold',
   },
@@ -296,7 +302,7 @@ const styles = StyleSheet.create({
   },
   typeSelector: {
     flexDirection: 'row',
-    backgroundColor: 'white',
+    backgroundColor: Colors.white,
     borderRadius: 12,
     padding: 4,
     marginBottom: 24,

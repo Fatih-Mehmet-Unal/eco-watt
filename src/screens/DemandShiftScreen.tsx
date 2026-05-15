@@ -151,16 +151,6 @@ const DemandShiftScreen: React.FC<DemandShiftScreenProps> = ({ navigation }) => 
         <SafeAreaView style={styles.container}>
             <ScrollView
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
-                {/* Header */}
-                <View style={styles.header}>
-                    <View>
-                        <Text style={styles.title}>⚡ Akıllı Enerji Önerileri</Text>
-                        <Text style={styles.subtitle}>Talep Kaydırma Sistemi</Text>
-                    </View>
-                    <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-                        <Text style={styles.backButtonText}>← Geri</Text>
-                    </TouchableOpacity>
-                </View>
 
                 {/* İstatistik Kartları */}
                 <View style={styles.statsContainer}>

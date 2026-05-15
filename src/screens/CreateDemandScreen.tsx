@@ -111,15 +111,6 @@ const CreateDemandScreen: React.FC<CreateDemandScreenProps> = ({ navigation }) =
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}>
-            <Text style={styles.backButtonText}>← Geri</Text>
-          </TouchableOpacity>
-          <Text style={styles.title}>Elektrik Talebi Oluştur</Text>
-        </View>
 
         {/* Şirket Bilgileri */}
         <View style={styles.companyInfo}>
