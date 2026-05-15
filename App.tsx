@@ -2,6 +2,7 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { StatusBar } from 'react-native';
+import { Colors } from './src/constants/Colors';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { RootStackParamList } from './src/types/navigation';
 import LoginScreen from './src/screens/LoginScreen';
@@ -26,12 +27,12 @@ const AppNavigator: React.FC = () => {
   }
 
   return (
-    <Stack.Navigator
+      <Stack.Navigator
       screenOptions={{
         headerStyle: {
-          backgroundColor: '#4CAF50',
+          backgroundColor: Colors.primary,
         },
-        headerTintColor: '#fff',
+        headerTintColor: Colors.white,
         headerTitleStyle: {
           fontWeight: 'bold',
         },
@@ -99,7 +100,7 @@ function App(): React.JSX.Element {
   return (
     <AuthProvider>
       <NavigationContainer>
-        <StatusBar barStyle="light-content" backgroundColor="#4CAF50" />
+        <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
         <AppNavigator />
       </NavigationContainer>
     </AuthProvider>

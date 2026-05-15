@@ -1,9 +1,15 @@
 <resources>
 
-    <!-- Base application theme. -->
-    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <!-- Base application theme. Use non-DayNight parent to avoid automatic theme switching. -->
+    <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">
         <!-- Customize your theme here. -->
         <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
+        <!-- Prevent Android from forcing dark mode on this app -->
+        <item name="android:forceDarkAllowed">false</item>
+        <!-- Explicit app colors to keep UI consistent with app design -->
+        <item name="colorPrimary">#2E8B57</item>
+        <item name="colorPrimaryDark">#265f43</item>
+        <item name="colorAccent">#2E8B57</item>
     </style>
 
 </resources>
