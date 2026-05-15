@@ -20,10 +20,11 @@ OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 # ─── Classes (alphabetical — must match TF dataset_from_directory order) ───
 CLASS_NAMES = ["cardboard", "glass", "metal", "paper", "plastic", "trash"]
 
-# ─── Data mixing ───
-FEEDBACK_MIX_RATIO = 0.30        # max 30% feedback in final dataset
-OVERSAMPLE_MINORITY = True       # oversample small classes to match largest
-FEEDBACK_OVERSAMPLE_MULTIPLIER = 10 # 1 feedback resmi kaç kopya halinde veri setine eklensin?
+# ─── Data mixing & Weighting ───
+FEEDBACK_MIX_RATIO = 0.30        # Batch başına %30 feedback, %70 orijinal veri
+BASE_FEEDBACK_WEIGHT = 5.0       # Feedback resimlerinin başlangıç ağırlığı
+MIN_FEEDBACK_WEIGHT = 3.0        # Feedback resimlerinin sönümlenme taban değeri
+WEIGHT_CLIP_MAX = 6.0            # Final ağırlık tavan değeri (gradient explosion'u önlemek için)
 
 # ─── Training ───
 IMG_HEIGHT = 224
@@ -31,7 +32,7 @@ IMG_WIDTH = 224
 BATCH_SIZE = 32
 EPOCHS = 30
 LEARNING_RATE = 0.0005
-EARLY_STOP_PATIENCE = 3
+EARLY_STOP_PATIENCE = 5
 FINE_TUNE_LAYERS = 20            # unfreeze last N layers of MobileNetV2 for fine-tuning
 FINE_TUNE_LR = 1e-5
 FINE_TUNE_EPOCHS = 10

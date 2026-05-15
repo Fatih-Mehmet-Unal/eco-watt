@@ -176,7 +176,7 @@ const WasteClassificationScreen: React.FC<Props> = ({ navigation }) => {
         try {
             const classificationResult = await classifyImage(selectedImage, base64Image);
             setResult(classificationResult);
-            setShowFeedback(shouldShowFeedback(classificationResult.confidence));
+            setShowFeedback(true);
             setFeedbackSubmitted(false);
             setShowCorrectionOptions(false);
 

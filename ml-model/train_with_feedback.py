@@ -139,121 +139,117 @@ def human_qa():
 
 
 # ---------------------------------------------------------------------------
-# 5. MERGE & BALANCE
+# 5. DATA PREPARATION
 # ---------------------------------------------------------------------------
-def merge_and_balance():
-    """Copy original + feedback into merged_dataset/, respecting mix ratio."""
-    import random
-    random.seed(42)
-
-    print("\n[5/9] Merging original + feedback datasets …")
-
-    if os.path.exists(MERGED_DATASET_DIR):
-        shutil.rmtree(MERGED_DATASET_DIR)
-
-    orig_counts, fb_counts = {}, {}
-
-    # Copy originals
-    for cls in CLASS_NAMES:
-        src = os.path.join(ORIGINAL_DATASET_DIR, cls)
-        dst = os.path.join(MERGED_DATASET_DIR, cls)
-        os.makedirs(dst, exist_ok=True)
-        if os.path.isdir(src):
-            files = [f for f in os.listdir(src) if not f.startswith(".")]
-            for f in files:
-                shutil.copy2(os.path.join(src, f), os.path.join(dst, f"orig_{f}"))
-            orig_counts[cls] = len(files)
-        else:
-            orig_counts[cls] = 0
-
-    total_orig = sum(orig_counts.values())
-
-    # Copy feedback (capped by mix ratio)
-    max_feedback = int(total_orig * FEEDBACK_MIX_RATIO / (1 - FEEDBACK_MIX_RATIO))
-    fb_files_all = []
-    for cls in CLASS_NAMES:
-        fb_dir = os.path.join(FEEDBACK_DOWNLOAD_DIR, cls)
-        if not os.path.isdir(fb_dir):
-            fb_counts[cls] = 0
-            continue
-        files = [os.path.join(fb_dir, f) for f in os.listdir(fb_dir)
-                 if not f.startswith(".") and f != "feedback_meta.json"]
-        fb_counts[cls] = len(files)
-        fb_files_all.extend([(fp, cls) for fp in files])
-
-    random.shuffle(fb_files_all)
-    fb_files_all = fb_files_all[:max_feedback]
-
-    for fp, cls in fb_files_all:
-        for i in range(FEEDBACK_OVERSAMPLE_MULTIPLIER):
-            dst = os.path.join(MERGED_DATASET_DIR, cls, f"fb_{i}_{os.path.basename(fp)}")
-            shutil.copy2(fp, dst)
-
-    # Oversample minority classes
-    if OVERSAMPLE_MINORITY:
-        class_file_counts = {}
-        for cls in CLASS_NAMES:
-            d = os.path.join(MERGED_DATASET_DIR, cls)
-            class_file_counts[cls] = len(os.listdir(d)) if os.path.isdir(d) else 0
-
-        max_count = max(class_file_counts.values()) if class_file_counts else 0
-        for cls in CLASS_NAMES:
-            d = os.path.join(MERGED_DATASET_DIR, cls)
-            files = os.listdir(d)
-            deficit = max_count - len(files)
-            if deficit > 0 and files:
-                extras = [random.choice(files) for _ in range(deficit)]
-                for i, ef in enumerate(extras):
-                    src_p = os.path.join(d, ef)
-                    dst_p = os.path.join(d, f"dup{i}_{ef}")
-                    shutil.copy2(src_p, dst_p)
-
-    # Summary
-    print("  Class distribution after merge + balance:")
-    for cls in CLASS_NAMES:
-        d = os.path.join(MERGED_DATASET_DIR, cls)
-        n = len(os.listdir(d)) if os.path.isdir(d) else 0
-        print(f"    {cls:12s}: {orig_counts.get(cls,0):5d} orig + "
-              f"{fb_counts.get(cls,0):4d} fb → {n:5d} total")
+# Not: "merge_and_balance" fonksiyonu kaldırıldı. Artık veriler fiziksel olarak
+# kopyalanıp birleştirilmiyor. Bunun yerine train_model fonksiyonu içerisinde 
+# tf.data.Dataset.sample_from_datasets kullanılarak dinamik olarak (Stratified Sampling)
+# batch'ler oluşturuluyor.
 
 
 # ---------------------------------------------------------------------------
 # 6. TRAIN
 # ---------------------------------------------------------------------------
 def train_model():
-    """Train MobileNetV2 on merged dataset, return (model, history, class_names)."""
+    """Train MobileNetV2 using dynamic sample weighting and stratified sampling."""
     import tensorflow as tf
     from tensorflow import keras
     from tensorflow.keras import layers
 
-    print("\n[6/9] Training model …")
+    print("\n[6/9] Training model with dynamic weights …")
 
-    # Datasets
-    train_ds = keras.utils.image_dataset_from_directory(
-        MERGED_DATASET_DIR, validation_split=0.2, subset="training",
-        seed=123, image_size=(IMG_HEIGHT, IMG_WIDTH), batch_size=BATCH_SIZE)
-    val_ds = keras.utils.image_dataset_from_directory(
-        MERGED_DATASET_DIR, validation_split=0.2, subset="validation",
-        seed=123, image_size=(IMG_HEIGHT, IMG_WIDTH), batch_size=BATCH_SIZE)
+    # Adım 1: Sınıf dağılımlarını hesapla (Base Class Weights için)
+    label_counts = Counter()
+    fb_count = 0
+    for i, cls in enumerate(CLASS_NAMES):
+        orig_dir = os.path.join(ORIGINAL_DATASET_DIR, cls)
+        fb_dir = os.path.join(FEEDBACK_DOWNLOAD_DIR, cls)
+        if os.path.isdir(orig_dir):
+            label_counts[i] += len([f for f in os.listdir(orig_dir) if not f.startswith('.')])
+        if os.path.isdir(fb_dir):
+            c = len([f for f in os.listdir(fb_dir) if not f.startswith('.') and f != "feedback_meta.json"])
+            label_counts[i] += c
+            fb_count += c
 
-    class_names = train_ds.class_names
-    assert class_names == CLASS_NAMES, f"Class mismatch: {class_names} vs {CLASS_NAMES}"
-
-    # Class weights
-    labels_list = []
-    for _, labels in train_ds:
-        labels_list.extend(labels.numpy())
-    label_counts = Counter(labels_list)
     total = sum(label_counts.values())
-    class_weight = {i: total / (len(class_names) * label_counts[i])
-                    for i in range(len(class_names))}
-    print("  Class weights:", class_weight)
+    class_weight_dict = {i: total / (len(CLASS_NAMES) * max(1, label_counts[i])) 
+                         for i in range(len(CLASS_NAMES))}
+    print("  Base Class weights:", class_weight_dict)
+
+    # Adım 2: Orijinal ve Feedback Dataset'leri (Unbatched) Yarat
+    train_ds_orig = keras.utils.image_dataset_from_directory(
+        ORIGINAL_DATASET_DIR, validation_split=0.2, subset="training",
+        seed=123, image_size=(IMG_HEIGHT, IMG_WIDTH), batch_size=None,
+        class_names=CLASS_NAMES)
+    
+    val_ds = keras.utils.image_dataset_from_directory(
+        ORIGINAL_DATASET_DIR, validation_split=0.2, subset="validation",
+        seed=123, image_size=(IMG_HEIGHT, IMG_WIDTH), batch_size=BATCH_SIZE,
+        class_names=CLASS_NAMES)
+
+    class_names = train_ds_orig.class_names
+
+    # Decay (Sönümlenme) mekanizması için Epoch Takipçisi
+    current_epoch = tf.Variable(0, dtype=tf.float32, trainable=False)
+
+    class EpochUpdateCallback(keras.callbacks.Callback):
+        def on_epoch_begin(self, epoch, logs=None):
+            current_epoch.assign(epoch)
+
+    # Class Weight Lookup Table
+    keys = tf.constant(list(class_weight_dict.keys()), dtype=tf.int32)
+    values = tf.constant(list(class_weight_dict.values()), dtype=tf.float32)
+    init = tf.lookup.KeyValueTensorInitializer(keys, values)
+    class_weight_table = tf.lookup.StaticHashTable(init, default_value=1.0)
+
+    # Feedback Weight (Decay logic)
+    def calculate_feedback_weight(epoch):
+        decay_rate = 0.2
+        return tf.maximum(tf.constant(MIN_FEEDBACK_WEIGHT, dtype=tf.float32), 
+                          tf.constant(BASE_FEEDBACK_WEIGHT, dtype=tf.float32) - decay_rate * epoch)
+
+    # Orijinal veriler için (image, label, sample_weight) eşlemesi
+    def map_orig(image, label):
+        base_cw = class_weight_table.lookup(tf.cast(label, tf.int32))
+        dyn_weight = 1.0 # Orijinal veri ağırlığı sabittir (1.0)
+        final_w = tf.clip_by_value(base_cw * dyn_weight, 0.0, WEIGHT_CLIP_MAX)
+        return image, label, final_w
+
+    # Feedback verileri için (image, label, sample_weight) eşlemesi
+    def map_fb(image, label):
+        base_cw = class_weight_table.lookup(tf.cast(label, tf.int32))
+        dyn_weight = calculate_feedback_weight(current_epoch) # Dinamik çürüyen ağırlık
+        final_w = tf.clip_by_value(base_cw * dyn_weight, 0.0, WEIGHT_CLIP_MAX)
+        return image, label, final_w
 
     AUTOTUNE = tf.data.AUTOTUNE
-    train_ds = train_ds.cache().shuffle(1000).prefetch(AUTOTUNE)
+    train_ds_orig = train_ds_orig.map(map_orig, num_parallel_calls=AUTOTUNE)
+
+    # Adım 3: Stratified Sampling (Mix Ratio koruması)
+    if fb_count > 0:
+        print(f"  Found {fb_count} feedback images. Applying Stratified Sampling.")
+        train_ds_fb = keras.utils.image_dataset_from_directory(
+            FEEDBACK_DOWNLOAD_DIR, image_size=(IMG_HEIGHT, IMG_WIDTH), 
+            batch_size=None, class_names=CLASS_NAMES)
+        
+        # Feedback verilerini sonsuz döndürerek örneklemeye (sample_from_datasets) hazırlıyoruz
+        train_ds_fb = train_ds_fb.map(map_fb, num_parallel_calls=AUTOTUNE).repeat()
+        
+        # Orijinal ve Feedback verilerini batch'lerin içine FEEDBACK_MIX_RATIO oranında karıştırıyoruz
+        train_ds = tf.data.Dataset.sample_from_datasets(
+            [train_ds_orig, train_ds_fb],
+            weights=[1.0 - FEEDBACK_MIX_RATIO, FEEDBACK_MIX_RATIO],
+            stop_on_empty_dataset=True # Orijinal veri bittiğinde epoch biter
+        )
+    else:
+        print("  No feedback images found. Using only original dataset.")
+        train_ds = train_ds_orig
+
+    # Batchleme ve optimize etme
+    train_ds = train_ds.cache().shuffle(1000).batch(BATCH_SIZE).prefetch(AUTOTUNE)
     val_ds = val_ds.cache().prefetch(AUTOTUNE)
 
-    # Data augmentation
+    # Veri artırma (Data Augmentation)
     data_aug = keras.Sequential([
         layers.RandomFlip("horizontal_and_vertical"),
         layers.RandomRotation(0.2),
@@ -262,7 +258,6 @@ def train_model():
         layers.RandomBrightness(0.1),
     ])
 
-    # Base model
     base_model = keras.applications.MobileNetV2(
         input_shape=(IMG_HEIGHT, IMG_WIDTH, 3),
         include_top=False, weights="imagenet")
@@ -280,15 +275,18 @@ def train_model():
         layers.Dense(len(class_names), activation="softmax"),
     ])
 
+    # Keras'ın model.fit() metodunda sample_weight'i otomatik olarak kullanması için extra parametre vermiyoruz.
+    # class_weight parametresi KALDIRILDI çünkü Final_Weight dataset içerisinde halledildi.
     model.compile(optimizer=keras.optimizers.Adam(LEARNING_RATE),
                   loss="sparse_categorical_crossentropy", metrics=["accuracy"])
 
     early_stop = keras.callbacks.EarlyStopping(
         monitor="val_loss", patience=EARLY_STOP_PATIENCE, restore_best_weights=True)
+    epoch_cb = EpochUpdateCallback()
 
     print("  Phase 1 — Transfer learning (frozen backbone) …")
     history = model.fit(train_ds, validation_data=val_ds, epochs=EPOCHS,
-                        callbacks=[early_stop], class_weight=class_weight)
+                        callbacks=[early_stop, epoch_cb])
 
     # Fine-tune
     if FINE_TUNE_LAYERS > 0:
@@ -299,8 +297,7 @@ def train_model():
         model.compile(optimizer=keras.optimizers.Adam(FINE_TUNE_LR),
                       loss="sparse_categorical_crossentropy", metrics=["accuracy"])
         history_ft = model.fit(train_ds, validation_data=val_ds,
-                               epochs=FINE_TUNE_EPOCHS, callbacks=[early_stop],
-                               class_weight=class_weight)
+                               epochs=FINE_TUNE_EPOCHS, callbacks=[early_stop, epoch_cb])
         # merge histories
         for k in history.history:
             history.history[k].extend(history_ft.history.get(k, []))
@@ -534,7 +531,7 @@ def main():
         print("\n[4/9] Skipped QA (--skip-qa)")
 
     # Step 5: Merge
-    merge_and_balance()
+    # merge_and_balance() işlevi train_model içerisine taşındı.
 
     # Step 6: Train
     if args.no_finetune:
