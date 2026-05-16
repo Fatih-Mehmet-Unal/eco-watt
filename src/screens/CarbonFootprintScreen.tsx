@@ -3,12 +3,13 @@ import {
     View,
     Text,
     StyleSheet,
-    ScrollView,
     TouchableOpacity,
     TextInput,
     Alert,
     ActivityIndicator,
+    Platform,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view'; // DEĞİŞİKLİK: Sihirli kütüphanemiz
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../types/navigation';
 import { Colors } from '../constants/Colors';
@@ -91,7 +92,6 @@ const CarbonFootprintScreen: React.FC<Props> = ({ navigation }) => {
 
             setResult(calculatedResult);
 
-            // Kaydet ve puan ver
             if (user?.id) {
                 await carbonFootprintService.saveAndReward(user.id, calculatedResult, isIndividual);
             }
@@ -112,6 +112,7 @@ const CarbonFootprintScreen: React.FC<Props> = ({ navigation }) => {
                     onChangeText={setter}
                     keyboardType="numeric"
                     placeholder="0"
+                    placeholderTextColor={Colors.defaultStatus || '#999999'} // DEĞİŞİKLİK: Gece modunda kaybolmaması için sabit gri token
                 />
                 <Text style={styles.inputUnit}>{unit}</Text>
             </View>
@@ -122,14 +123,22 @@ const CarbonFootprintScreen: React.FC<Props> = ({ navigation }) => {
         <View style={styles.inputRow}>
             <Text style={styles.inputLabel}>Araç Tipi</Text>
             <View style={styles.carTypeContainer}>
-                {(['petrol', 'diesel', 'electric', 'hybrid'] as const).map((type) => (
+                {([
+                    { type: 'petrol', label: 'Benzin', emoji: '⛽' },
+                    { type: 'diesel', label: 'Dizel', emoji: '🛢️' },
+                    { type: 'electric', label: 'Elektrik', emoji: '🔌' },
+                    { type: 'hybrid', label: 'Hibrit', emoji: '🔋' },
+                ] as const).map((item) => (
                     <TouchableOpacity
-                        key={type}
-                        style={[styles.carTypeButton, carType === type && styles.carTypeButtonActive]}
-                        onPress={() => setCarType(type)}
+                        key={item.type}
+                        style={[styles.carTypeButton, carType === item.type && styles.carTypeButtonActive]}
+                        onPress={() => setCarType(item.type)}
                     >
-                        <Text style={[styles.carTypeText, carType === type && styles.carTypeTextActive]}>
-                            {type === 'petrol' ? '⛽' : type === 'diesel' ? '🛢️' : type === 'electric' ? '🔌' : '🔋'}
+                        <Text style={[styles.carTypeEmoji, carType === item.type && styles.carTypeEmojiActive]}>
+                            {item.emoji}
+                        </Text>
+                        <Text style={[styles.carTypeLabelText, carType === item.type && styles.carTypeLabelTextActive]}>
+                            {item.label}
                         </Text>
                     </TouchableOpacity>
                 ))}
@@ -143,7 +152,6 @@ const CarbonFootprintScreen: React.FC<Props> = ({ navigation }) => {
         const ratingColor = carbonFootprintService.getRatingColor(result.rating);
         const ratingEmoji = carbonFootprintService.getRatingEmoji(result.rating);
         const ratingText = carbonFootprintService.getRatingText(result.rating);
-        const average = isIndividual ? TURKEY_AVERAGES.individual : TURKEY_AVERAGES.corporate_per_employee;
 
         return (
             <View style={styles.resultContainer}>
@@ -163,7 +171,7 @@ const CarbonFootprintScreen: React.FC<Props> = ({ navigation }) => {
 
                     <Text style={styles.comparisonText}>
                         {result.comparison_to_average >= 0 ? '📈' : '📉'} Türkiye ortalamasına göre{' '}
-                        <Text style={{ color: result.comparison_to_average >= 0 ? '#F44336' : '#4CAF50', fontWeight: 'bold' }}>
+                        <Text style={{ color: result.comparison_to_average >= 0 ? Colors.rejected : Colors.approved, fontWeight: 'bold' }}>
                             %{Math.abs(result.comparison_to_average)} {result.comparison_to_average >= 0 ? 'fazla' : 'az'}
                         </Text>
                     </Text>
@@ -207,87 +215,93 @@ const CarbonFootprintScreen: React.FC<Props> = ({ navigation }) => {
         );
     };
 
-    if (result) {
-        return (
-            <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-                {renderResult()}
-            </ScrollView>
-        );
-    }
-
+    // DEĞİŞİKLİK: KeyboardAwareScrollView tüm yapıyı sarmalıyor.
+    // extraScrollHeight={50} tıklanan kutunun klavyeden 50 piksel daha yukarıda durmasını sağlar, böylece butonlar/bir sonraki alan rahat görünür.
     return (
-        <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-            <View style={styles.header}>
-                <Text style={styles.headerEmoji}>👣</Text>
-                <Text style={styles.headerTitle}>Karbon Ayak İzi Hesaplayıcı</Text>
-                <Text style={styles.headerSubtitle}>
-                    {isIndividual ? 'Kişisel karbon emisyonlarınızı hesaplayın' : 'Şirketinizin karbon emisyonlarını hesaplayın'}
-                </Text>
-            </View>
-
-            {isIndividual ? (
-                <>
-                    <Text style={styles.sectionHeader}>🚗 Ulaşım (Haftalık)</Text>
-                    {renderInput('Araç ile gidilen mesafe', carKm, setCarKm, 'km')}
-                    {renderCarTypeSelector()}
-                    {renderInput('Toplu taşıma', publicTransportKm, setPublicTransportKm, 'km')}
-                    {renderInput('Uçak yolculuğu (yıllık)', flightHours, setFlightHours, 'saat')}
-
-                    <Text style={styles.sectionHeader}>💡 Enerji (Aylık)</Text>
-                    {renderInput('Elektrik tüketimi', electricityKwh, setElectricityKwh, 'kWh')}
-                    {renderInput('Doğalgaz tüketimi', gasM3, setGasM3, 'm³')}
-
-                    <Text style={styles.sectionHeader}>🍽️ Yemek (Haftalık)</Text>
-                    {renderInput('Et porsiyon sayısı', meatPortions, setMeatPortions, 'porsiyon')}
-                    {renderInput('Vejetaryen porsiyon', vegPortions, setVegPortions, 'porsiyon')}
-
-                    <Text style={styles.sectionHeader}>🗑️ Atık (Haftalık)</Text>
-                    {renderInput('Toplam atık', wasteKg, setWasteKg, 'kg')}
-                    {renderInput('Geri dönüşüm oranı', recyclePercent, setRecyclePercent, '%')}
-                </>
+        <KeyboardAwareScrollView
+            style={styles.container}
+            contentContainerStyle={styles.content}
+            enableOnAndroid={true}
+            extraScrollHeight={Platform.OS === 'ios' ? 50 : 80}
+            keyboardShouldPersistTaps="handled"
+        >
+            {result ? (
+                renderResult()
             ) : (
                 <>
-                    <Text style={styles.sectionHeader}>🏢 Şirket Bilgileri</Text>
-                    {renderInput('Çalışan sayısı', employeeCount, setEmployeeCount, 'kişi')}
-                    {renderInput('Ofis alanı', officeSqm, setOfficeSqm, 'm²')}
+                    <View style={styles.header}>
+                        <Text style={styles.headerEmoji}>👣</Text>
+                        <Text style={styles.headerTitle}>Karbon Ayak İzi Hesaplayıcı</Text>
+                        <Text style={styles.headerSubtitle}>
+                            {isIndividual ? 'Kişisel karbon emisyonlarınızı hesaplayın' : 'Şirketinizin karbon emisyonlarını hesaplayın'}
+                        </Text>
+                    </View>
 
-                    <Text style={styles.sectionHeader}>💡 Enerji (Aylık)</Text>
-                    {renderInput('Elektrik tüketimi', corpElectricity, setCorpElectricity, 'kWh')}
-                    {renderInput('Doğalgaz tüketimi', corpGas, setCorpGas, 'm³')}
+                    {isIndividual ? (
+                        <>
+                            <Text style={styles.sectionHeader}>🚗 Ulaşım (Haftalık)</Text>
+                            {renderInput('Araç ile gidilen mesafe', carKm, setCarKm, 'km')}
+                            {renderCarTypeSelector()}
+                            {renderInput('Toplu taşıma', publicTransportKm, setPublicTransportKm, 'km')}
+                            {renderInput('Uçak yolculuğu (yıllık)', flightHours, setFlightHours, 'saat')}
 
-                    <Text style={styles.sectionHeader}>🚗 Ulaşım</Text>
-                    {renderInput('Şirket araçları (aylık)', corpVehicleKm, setCorpVehicleKm, 'km')}
-                    {renderInput('İş seyahatleri (yıllık)', corpFlights, setCorpFlights, 'uçuş')}
+                            <Text style={styles.sectionHeader}>💡 Enerji (Aylık)</Text>
+                            {renderInput('Elektrik tüketimi', electricityKwh, setElectricityKwh, 'kWh')}
+                            {renderInput('Doğalgaz tüketimi', gasM3, setGasM3, 'm³')}
 
-                    <Text style={styles.sectionHeader}>🗑️ Atık (Aylık)</Text>
-                    {renderInput('Toplam atık', corpWaste, setCorpWaste, 'kg')}
-                    {renderInput('Geri dönüşüm oranı', corpRecycle, setCorpRecycle, '%')}
+                            <Text style={styles.sectionHeader}>🍽️ Yemek (Haftalık)</Text>
+                            {renderInput('Et porsiyon sayısı', meatPortions, setMeatPortions, 'porsiyon')}
+                            {renderInput('Vejetaryen porsiyon', vegPortions, setVegPortions, 'porsiyon')}
+
+                            <Text style={styles.sectionHeader}>🗑️ Atık (Haftalık)</Text>
+                            {renderInput('Toplam atık', wasteKg, setWasteKg, 'kg')}
+                            {renderInput('Geri dönüşüm oranı', recyclePercent, setRecyclePercent, '%')}
+                        </>
+                    ) : (
+                        <>
+                            <Text style={styles.sectionHeader}>🏢 Şirket Bilgileri</Text>
+                            {renderInput('Çalışan sayısı', employeeCount, setEmployeeCount, 'kişi')}
+                            {renderInput('Ofis alanı', officeSqm, setOfficeSqm, 'm²')}
+
+                            <Text style={styles.sectionHeader}>💡 Enerji (Aylık)</Text>
+                            {renderInput('Elektrik tüketimi', corpElectricity, setCorpElectricity, 'kWh')}
+                            {renderInput('Doğalgaz tüketimi', corpGas, setCorpGas, 'm³')}
+
+                            <Text style={styles.sectionHeader}>🚗 Ulaşım</Text>
+                            {renderInput('Şirket araçları (aylık)', corpVehicleKm, setCorpVehicleKm, 'km')}
+                            {renderInput('İş seyahatleri (yıllık)', corpFlights, setCorpFlights, 'uçuş')}
+
+                            <Text style={styles.sectionHeader}>🗑️ Atık (Aylık)</Text>
+                            {renderInput('Toplam atık', corpWaste, setCorpWaste, 'kg')}
+                            {renderInput('Geri dönüşüm oranı', corpRecycle, setCorpRecycle, '%')}
+                        </>
+                    )}
+
+                    <TouchableOpacity
+                        style={styles.calculateButton}
+                        onPress={handleCalculate}
+                        disabled={loading}
+                    >
+                        {loading ? (
+                            <ActivityIndicator color={Colors.white} />
+                        ) : (
+                            <Text style={styles.calculateButtonText}>🌍 Hesapla</Text>
+                        )}
+                    </TouchableOpacity>
                 </>
             )}
-
-            <TouchableOpacity
-                style={styles.calculateButton}
-                onPress={handleCalculate}
-                disabled={loading}
-            >
-                {loading ? (
-                    <ActivityIndicator color="white" />
-                ) : (
-                    <Text style={styles.calculateButtonText}>🌍 Hesapla</Text>
-                )}
-            </TouchableOpacity>
-        </ScrollView>
+        </KeyboardAwareScrollView>
     );
 };
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: Colors.background || '#F9F9F9',
     },
     content: {
         padding: 20,
-        paddingBottom: 40,
+        paddingBottom: 60, // En alttaki elemanın klavyenin arkasında sıkışmaması için padding artırıldı
     },
     header: {
         alignItems: 'center',
@@ -300,18 +314,18 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 22,
         fontWeight: 'bold',
-        color: Colors.textDark,
+        color: Colors.textDark || '#000000',
         marginBottom: 5,
     },
     headerSubtitle: {
         fontSize: 14,
-        color: Colors.secondary,
+        color: Colors.secondary || '#666666',
         textAlign: 'center',
     },
     sectionHeader: {
         fontSize: 16,
         fontWeight: 'bold',
-        color: Colors.textDark,
+        color: Colors.textDark || '#000000',
         marginTop: 20,
         marginBottom: 15,
     },
@@ -320,65 +334,79 @@ const styles = StyleSheet.create({
     },
     inputLabel: {
         fontSize: 14,
-        color: Colors.textDark,
+        color: Colors.textDark || '#000000',
         marginBottom: 6,
     },
     inputWrapper: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'white',
+        backgroundColor: Colors.white,
         borderRadius: 10,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: Colors.border || '#E0E0E0',
     },
     input: {
         flex: 1,
         padding: 12,
         fontSize: 16,
+        color: Colors.black,
+        backgroundColor: Colors.white,
+        borderRadius: 10,
     },
     inputUnit: {
         paddingRight: 12,
-        color: Colors.secondary,
+        color: Colors.secondary || '#666666',
         fontSize: 14,
     },
     carTypeContainer: {
         flexDirection: 'row',
-        gap: 10,
+        gap: 8,
     },
     carTypeButton: {
         flex: 1,
-        padding: 12,
-        backgroundColor: '#F5F5F5',
+        paddingVertical: 10,
+        paddingHorizontal: 4,
+        backgroundColor: Colors.demoBackground || '#F5F5F5',
         borderRadius: 10,
         alignItems: 'center',
+        justifyContent: 'center',
         borderWidth: 2,
         borderColor: 'transparent',
     },
     carTypeButtonActive: {
-        backgroundColor: '#E8F5E9',
-        borderColor: Colors.primary,
+        backgroundColor: Colors.demoBackground || '#E8F5E9',
+        borderColor: Colors.primary || '#4CAF50',
     },
-    carTypeText: {
-        fontSize: 24,
+    carTypeEmoji: {
+        fontSize: 22,
+        marginBottom: 4,
     },
-    carTypeTextActive: {
+    carTypeEmojiActive: {
         transform: [{ scale: 1.1 }],
     },
+    carTypeLabelText: {
+        fontSize: 11,
+        color: Colors.secondary || '#666666',
+        fontWeight: '500',
+    },
+    carTypeLabelTextActive: {
+        color: Colors.primary || '#4CAF50',
+        fontWeight: 'bold',
+    },
     calculateButton: {
-        backgroundColor: Colors.primary,
+        backgroundColor: Colors.primary || '#4CAF50',
         padding: 16,
         borderRadius: 12,
         alignItems: 'center',
         marginTop: 25,
     },
     calculateButtonText: {
-        color: 'white',
+        color: Colors.white,
         fontSize: 18,
         fontWeight: 'bold',
     },
-    // Result styles
     resultContainer: {
-        backgroundColor: 'white',
+        backgroundColor: Colors.white,
         borderRadius: 16,
         overflow: 'hidden',
         shadowColor: '#000',
@@ -411,29 +439,29 @@ const styles = StyleSheet.create({
     totalBox: {
         alignItems: 'center',
         padding: 20,
-        backgroundColor: '#F5F5F5',
+        backgroundColor: Colors.demoBackground || '#F5F5F5',
         borderRadius: 12,
         marginBottom: 15,
     },
     totalValue: {
         fontSize: 36,
         fontWeight: 'bold',
-        color: Colors.textDark,
+        color: Colors.textDark || '#000000',
     },
     totalUnit: {
         fontSize: 14,
-        color: Colors.secondary,
+        color: Colors.secondary || '#666666',
     },
     comparisonText: {
         fontSize: 14,
-        color: Colors.textDark,
+        color: Colors.textDark || '#000000',
         textAlign: 'center',
         marginBottom: 20,
     },
     sectionTitle: {
         fontSize: 16,
         fontWeight: 'bold',
-        color: Colors.textDark,
+        color: Colors.textDark || '#000000',
         marginTop: 15,
         marginBottom: 10,
     },
@@ -447,24 +475,24 @@ const styles = StyleSheet.create({
     breakdownLabel: {
         width: 90,
         fontSize: 13,
-        color: Colors.textDark,
+        color: Colors.textDark || '#000000',
     },
     breakdownBarContainer: {
         flex: 1,
         height: 8,
-        backgroundColor: '#E0E0E0',
+        backgroundColor: Colors.border || '#E0E0E0',
         borderRadius: 4,
         marginHorizontal: 10,
     },
     breakdownBar: {
         height: '100%',
-        backgroundColor: Colors.primary,
+        backgroundColor: Colors.primary || '#4CAF50',
         borderRadius: 4,
     },
     breakdownValue: {
         width: 70,
         fontSize: 12,
-        color: Colors.secondary,
+        color: Colors.secondary || '#666666',
         textAlign: 'right',
     },
     tipItem: {
@@ -472,24 +500,24 @@ const styles = StyleSheet.create({
         marginBottom: 8,
     },
     tipBullet: {
-        color: Colors.primary,
+        color: Colors.primary || '#4CAF50',
         marginRight: 8,
         fontSize: 14,
     },
     tipText: {
         flex: 1,
         fontSize: 14,
-        color: Colors.textDark,
+        color: Colors.textDark || '#000000',
         lineHeight: 20,
     },
     recalculateButton: {
         padding: 15,
         alignItems: 'center',
         borderTopWidth: 1,
-        borderTopColor: Colors.border,
+        borderTopColor: Colors.border || '#E0E0E0',
     },
     recalculateButtonText: {
-        color: Colors.primary,
+        color: Colors.primary || '#4CAF50',
         fontSize: 16,
         fontWeight: '600',
     },

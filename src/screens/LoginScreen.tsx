@@ -103,6 +103,7 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
             <TextInput
               style={styles.input}
               placeholder="Email adresinizi girin"
+              placeholderTextColor={Colors.defaultStatus || Colors.secondary}
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -116,6 +117,7 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
             <TextInput
               style={styles.input}
               placeholder="Şifrenizi girin"
+              placeholderTextColor={Colors.defaultStatus || Colors.secondary}
               value={password}
               onChangeText={setPassword}
               secureTextEntry
@@ -175,7 +177,7 @@ const styles = StyleSheet.create({
     color: Colors.secondary,
   },
   formContainer: {
-    backgroundColor: 'white',
+    backgroundColor: Colors.white,
     borderRadius: 12,
     padding: 24,
     shadowColor: Colors.black,
@@ -203,6 +205,7 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 16,
     backgroundColor: Colors.inputBackground,
+    color: Colors.black,
   },
   loginButton: {
     backgroundColor: Colors.primary,
@@ -215,7 +218,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.secondary,
   },
   loginButtonText: {
-    color: 'white',
+    color: Colors.white,
     fontSize: 18,
     fontWeight: 'bold',
   },
@@ -247,7 +250,7 @@ const styles = StyleSheet.create({
 
   typeSelector: {
     flexDirection: 'row',
-    backgroundColor: 'white',
+    backgroundColor: Colors.white,
     borderRadius: 12,
     padding: 4,
     marginBottom: 24,
@@ -272,7 +275,7 @@ const styles = StyleSheet.create({
     color: Colors.textDark,
   },
   activeTypeButtonText: {
-    color: 'white',
+    color: Colors.white,
   },
 });
 

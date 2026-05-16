@@ -151,16 +151,6 @@ const DemandShiftScreen: React.FC<DemandShiftScreenProps> = ({ navigation }) => 
         <SafeAreaView style={styles.container}>
             <ScrollView
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
-                {/* Header */}
-                <View style={styles.header}>
-                    <View>
-                        <Text style={styles.title}>⚡ Akıllı Enerji Önerileri</Text>
-                        <Text style={styles.subtitle}>Talep Kaydırma Sistemi</Text>
-                    </View>
-                    <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-                        <Text style={styles.backButtonText}>← Geri</Text>
-                    </TouchableOpacity>
-                </View>
 
                 {/* İstatistik Kartları */}
                 <View style={styles.statsContainer}>
@@ -206,10 +196,10 @@ const DemandShiftScreen: React.FC<DemandShiftScreenProps> = ({ navigation }) => 
                                             {
                                                 backgroundColor:
                                                     rec.status === 'pending'
-                                                        ? '#FF9800'
+                                                        ? Colors.pending
                                                         : rec.status === 'approved'
-                                                            ? '#4CAF50'
-                                                            : '#F44336',
+                                                            ? Colors.approved
+                                                            : Colors.rejected,
                                             },
                                         ]}>
                                         <Text style={styles.statusText}>{rec.status}</Text>
@@ -242,14 +232,14 @@ const DemandShiftScreen: React.FC<DemandShiftScreenProps> = ({ navigation }) => 
                                         </View>
                                         <View style={styles.metricItem}>
                                             <Text style={styles.metricLabel}>Tasarruf</Text>
-                                            <Text style={[styles.metricValue, { color: '#4CAF50' }]}>
+                                            <Text style={[styles.metricValue, { color: Colors.approved }]}>
                                                 {rec.potential_savings_tl.toFixed(2)}
                                             </Text>
                                             <Text style={styles.metricUnit}>₺</Text>
                                         </View>
                                         <View style={styles.metricItem}>
                                             <Text style={styles.metricLabel}>CO2 Azaltım</Text>
-                                            <Text style={[styles.metricValue, { color: '#2196F3' }]}>
+                                            <Text style={[styles.metricValue, { color: Colors.offPeak || '#2196F3' }]}>
                                                 {rec.co2_reduction_kg.toFixed(1)}
                                             </Text>
                                             <Text style={styles.metricUnit}>kg</Text>
@@ -289,13 +279,13 @@ const DemandShiftScreen: React.FC<DemandShiftScreenProps> = ({ navigation }) => 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f5f5f5',
+        backgroundColor: Colors.background,
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#f5f5f5',
+        backgroundColor: Colors.background,
     },
     loadingText: {
         marginTop: 12,
@@ -312,7 +302,7 @@ const styles = StyleSheet.create({
     title: {
         fontSize: 22,
         fontWeight: 'bold',
-        color: 'white',
+        color: Colors.white,
     },
     subtitle: {
         fontSize: 12,
@@ -323,7 +313,7 @@ const styles = StyleSheet.create({
         padding: 8,
     },
     backButtonText: {
-        color: 'white',
+        color: Colors.white,
         fontSize: 14,
         fontWeight: 'bold',
     },
@@ -336,7 +326,7 @@ const styles = StyleSheet.create({
     statCard: {
         flex: 1,
         minWidth: '48%',
-        backgroundColor: 'white',
+        backgroundColor: Colors.white,
         borderRadius: 12,
         padding: 12,
         alignItems: 'center',
@@ -411,7 +401,7 @@ const styles = StyleSheet.create({
         borderRadius: 12,
     },
     statusText: {
-        color: 'white',
+        color: Colors.white,
         fontSize: 11,
         fontWeight: 'bold',
     },
@@ -422,7 +412,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        backgroundColor: '#f9f9f9',
+        backgroundColor: Colors.inputBackground,
         borderRadius: 8,
         padding: 12,
     },
@@ -451,7 +441,7 @@ const styles = StyleSheet.create({
     metricsGrid: {
         flexDirection: 'row',
         justifyContent: 'space-around',
-        backgroundColor: '#f0f0f0',
+        backgroundColor: Colors.priceBackground || '#f0f0f0',
         borderRadius: 8,
         paddingVertical: 12,
     },
@@ -490,13 +480,13 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     approveBtn: {
-        backgroundColor: '#4CAF50',
+        backgroundColor: Colors.approved,
     },
     rejectBtn: {
-        backgroundColor: '#F44336',
+        backgroundColor: Colors.rejected,
     },
     buttonText: {
-        color: 'white',
+        color: Colors.white,
         fontWeight: 'bold',
         fontSize: 14,
     },
