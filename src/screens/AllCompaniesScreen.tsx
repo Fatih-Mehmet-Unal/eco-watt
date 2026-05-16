@@ -149,15 +149,6 @@ const AllCompaniesScreen: React.FC<AllCompaniesScreenProps> = ({ navigation }) =
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}>
-          <Text style={styles.backButtonText}>← Geri</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>Tüm Şirket Talepleri</Text>
-      </View>
 
       {/* Özet */}
       <View style={styles.summary}>
