@@ -155,8 +155,51 @@ def train_model():
     import tensorflow as tf
     from tensorflow import keras
     from tensorflow.keras import layers
+    import tensorflow.keras.backend as K
 
     print("\n[6/9] Training model with dynamic weights …")
+
+    # Özel Macro F1 Metriği (Epoch içi batch-by-batch hesaplama için)
+    class MacroF1Metric(keras.metrics.Metric):
+        def __init__(self, name='macro_f1', **kwargs):
+            super(MacroF1Metric, self).__init__(name=name, **kwargs)
+            self.tp = self.add_weight(name='tp', shape=(len(CLASS_NAMES),), initializer='zeros')
+            self.fp = self.add_weight(name='fp', shape=(len(CLASS_NAMES),), initializer='zeros')
+            self.fn = self.add_weight(name='fn', shape=(len(CLASS_NAMES),), initializer='zeros')
+
+        def update_state(self, y_true, y_pred, sample_weight=None):
+            y_true = tf.cast(y_true, tf.int32)
+            y_pred = tf.argmax(y_pred, axis=1, output_type=tf.int32)
+            y_true_one_hot = tf.one_hot(y_true, depth=len(CLASS_NAMES))
+            y_pred_one_hot = tf.one_hot(y_pred, depth=len(CLASS_NAMES))
+            
+            # Eğer sample_weight kullanılmak istenirse tf.reduce_sum kısmına çarpılarak eklenebilir,
+            # ancak biz sadece saf tahmin doğruluğunu ölçmek istiyoruz.
+            self.tp.assign_add(tf.reduce_sum(y_true_one_hot * y_pred_one_hot, axis=0))
+            self.fp.assign_add(tf.reduce_sum((1 - y_true_one_hot) * y_pred_one_hot, axis=0))
+            self.fn.assign_add(tf.reduce_sum(y_true_one_hot * (1 - y_pred_one_hot), axis=0))
+
+        def result(self):
+            precision = self.tp / (self.tp + self.fp + K.epsilon())
+            recall = self.tp / (self.tp + self.fn + K.epsilon())
+            f1 = 2 * precision * recall / (precision + recall + K.epsilon())
+            return tf.reduce_mean(f1)
+
+        def reset_state(self):
+            self.tp.assign(tf.zeros((len(CLASS_NAMES),)))
+            self.fp.assign(tf.zeros((len(CLASS_NAMES),)))
+            self.fn.assign(tf.zeros((len(CLASS_NAMES),)))
+
+    # F1 Farkını terminale basacak olan Callback
+    class F1DifferenceCallback(keras.callbacks.Callback):
+        def on_epoch_end(self, epoch, logs=None):
+            logs = logs or {}
+            train_f1 = logs.get("macro_f1")
+            val_f1 = logs.get("val_macro_f1")
+            if train_f1 is not None and val_f1 is not None:
+                diff = train_f1 - val_f1
+                # Pozitif fark: Train daha iyi (Normal/Overfit riski), Negatif fark: Val daha iyi (Underfit)
+                print(f"  --> [F1 Raporu] Train F1: {train_f1:.4f} | Val F1: {val_f1:.4f} | Fark (Overfit Riski): {diff:.4f}")
 
     # Adım 1: Sınıf dağılımlarını hesapla (Base Class Weights için)
     label_counts = Counter()
@@ -211,15 +254,16 @@ def train_model():
     # Orijinal veriler için (image, label, sample_weight) eşlemesi
     def map_orig(image, label):
         base_cw = class_weight_table.lookup(tf.cast(label, tf.int32))
-        dyn_weight = 1.0 # Orijinal veri ağırlığı sabittir (1.0)
-        final_w = tf.clip_by_value(base_cw * dyn_weight, 0.0, WEIGHT_CLIP_MAX)
+        final_w = tf.clip_by_value(base_cw, 0.5, WEIGHT_CLIP_MAX)
         return image, label, final_w
 
     # Feedback verileri için (image, label, sample_weight) eşlemesi
     def map_fb(image, label):
         base_cw = class_weight_table.lookup(tf.cast(label, tf.int32))
         dyn_weight = calculate_feedback_weight(current_epoch) # Dinamik çürüyen ağırlık
-        final_w = tf.clip_by_value(base_cw * dyn_weight, 0.0, WEIGHT_CLIP_MAX)
+        # Çarpma yerine LOGARİTMİK ve TOPLAMSAL yumuşatma: Daha kararlı sonuçlar verir
+        final_w = base_cw + tf.math.log(dyn_weight + 1.0)
+        final_w = tf.clip_by_value(final_w, 0.5, WEIGHT_CLIP_MAX)
         return image, label, final_w
 
     AUTOTUNE = tf.data.AUTOTUNE
@@ -228,6 +272,11 @@ def train_model():
     # Adım 3: Stratified Sampling (Mix Ratio koruması)
     if fb_count > 0:
         print(f"  Found {fb_count} feedback images. Applying Stratified Sampling.")
+        
+        # Hata vermemesi için FEEDBACK klasöründe tüm sınıf isimlerinde boş klasör oluştur
+        for cls in CLASS_NAMES:
+            os.makedirs(os.path.join(FEEDBACK_DOWNLOAD_DIR, cls), exist_ok=True)
+            
         train_ds_fb = keras.utils.image_dataset_from_directory(
             FEEDBACK_DOWNLOAD_DIR, image_size=(IMG_HEIGHT, IMG_WIDTH), 
             batch_size=None, class_names=CLASS_NAMES)
@@ -278,15 +327,16 @@ def train_model():
     # Keras'ın model.fit() metodunda sample_weight'i otomatik olarak kullanması için extra parametre vermiyoruz.
     # class_weight parametresi KALDIRILDI çünkü Final_Weight dataset içerisinde halledildi.
     model.compile(optimizer=keras.optimizers.Adam(LEARNING_RATE),
-                  loss="sparse_categorical_crossentropy", metrics=["accuracy"])
+                  loss="sparse_categorical_crossentropy", metrics=["accuracy", MacroF1Metric()])
 
     early_stop = keras.callbacks.EarlyStopping(
         monitor="val_loss", patience=EARLY_STOP_PATIENCE, restore_best_weights=True)
     epoch_cb = EpochUpdateCallback()
+    f1_diff_cb = F1DifferenceCallback()
 
     print("  Phase 1 — Transfer learning (frozen backbone) …")
     history = model.fit(train_ds, validation_data=val_ds, epochs=EPOCHS,
-                        callbacks=[early_stop, epoch_cb])
+                        callbacks=[early_stop, epoch_cb, f1_diff_cb])
 
     # Fine-tune
     if FINE_TUNE_LAYERS > 0:
@@ -295,9 +345,9 @@ def train_model():
         for layer in base_model.layers[:-FINE_TUNE_LAYERS]:
             layer.trainable = False
         model.compile(optimizer=keras.optimizers.Adam(FINE_TUNE_LR),
-                      loss="sparse_categorical_crossentropy", metrics=["accuracy"])
+                      loss="sparse_categorical_crossentropy", metrics=["accuracy", MacroF1Metric()])
         history_ft = model.fit(train_ds, validation_data=val_ds,
-                               epochs=FINE_TUNE_EPOCHS, callbacks=[early_stop, epoch_cb])
+                               epochs=FINE_TUNE_EPOCHS, callbacks=[early_stop, epoch_cb, f1_diff_cb])
         # merge histories
         for k in history.history:
             history.history[k].extend(history_ft.history.get(k, []))
@@ -332,6 +382,24 @@ def evaluate_model(model, val_ds, class_names):
     print("  Confusion Matrix:\n", cm)
     print("\n", report_str)
     print(f"  Macro F1: {macro_f1:.4f}  (threshold: {MIN_MACRO_F1})")
+
+    # Çıktı klasörünün var olduğundan emin ol
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+    # Confusion Matrix grafiği çiz ve kaydet
+    try:
+        from sklearn.metrics import ConfusionMatrixDisplay
+        import matplotlib.pyplot as plt
+        disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=class_names)
+        fig, ax = plt.subplots(figsize=(10, 8))
+        disp.plot(ax=ax, cmap="Blues", xticks_rotation=45)
+        plt.title("Confusion Matrix")
+        plt.tight_layout()
+        cm_path = os.path.join(OUTPUT_DIR, "confusion_matrix.png")
+        plt.savefig(cm_path, dpi=150)
+        plt.show(block=False) # Ekrana yansıt ama programı kilitleme
+    except Exception as e:
+        print(f"  ⚠ Confusion matrix grafiği çizilemedi: {e}")
 
     # Quality gate
     passed = True
@@ -466,9 +534,7 @@ def deploy_to_app(version_tag):
 
 
 def plot_history(history, version_tag):
-    """Save training history plot."""
-    import matplotlib
-    matplotlib.use("Agg")
+    """Save training history plot and display it."""
     import matplotlib.pyplot as plt
 
     plt.figure(figsize=(14, 5))
@@ -486,6 +552,7 @@ def plot_history(history, version_tag):
     fig_path = os.path.join(OUTPUT_DIR, f"training_history_{version_tag}.png")
     plt.savefig(fig_path, dpi=150)
     print(f"  → Training plot: {fig_path}")
+    plt.show(block=False) # Ekrana yansıt ama programı kilitleme
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -567,6 +634,11 @@ def main():
     print(f"  Macro F1      : {macro_f1:.4f}")
     print(f"  Output dir    : {OUTPUT_DIR}")
     print("=" * 60)
+    
+    # Açılan grafik pencerelerinin kapanmaması için programın sonunda bekle
+    import matplotlib.pyplot as plt
+    print("\nGrafikleri inceleyebilirsiniz. Pencereleri kapattığınızda program sonlanacaktır.")
+    plt.show()
 
 
 if __name__ == "__main__":

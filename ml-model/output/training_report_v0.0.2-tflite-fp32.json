@@ -1,0 +1,56 @@
+{
+  "version": "v0.0.2-tflite-fp32",
+  "previous_version": "v0.0.1-tflite-fp32",
+  "timestamp": "2026-05-16T20:25:44.862074",
+  "macro_f1": 0.822,
+  "per_class": {
+    "cardboard": {
+      "precision": 0.961,
+      "recall": 0.8916,
+      "f1": 0.925,
+      "support": 83.0
+    },
+    "glass": {
+      "precision": 0.8526,
+      "recall": 0.7864,
+      "f1": 0.8182,
+      "support": 103.0
+    },
+    "metal": {
+      "precision": 0.8608,
+      "recall": 0.8718,
+      "f1": 0.8662,
+      "support": 78.0
+    },
+    "paper": {
+      "precision": 0.8926,
+      "recall": 0.871,
+      "f1": 0.8816,
+      "support": 124.0
+    },
+    "plastic": {
+      "precision": 0.7802,
+      "recall": 0.8068,
+      "f1": 0.7933,
+      "support": 88.0
+    },
+    "trash": {
+      "precision": 0.5476,
+      "recall": 0.7931,
+      "f1": 0.6479,
+      "support": 29.0
+    }
+  },
+  "artifacts": {
+    "fp32_tflite": "C:\\GreenGradProject\\eco-watt\\ml-model\\output\\model_v0.0.2-tflite-fp32_fp32.tflite",
+    "int8_tflite": "C:\\GreenGradProject\\eco-watt\\ml-model\\output\\model_v0.0.2-tflite-fp32_int8.tflite"
+  },
+  "config": {
+    "feedback_mix_ratio": 0.3,
+    "epochs": 30,
+    "fine_tune_layers": 20,
+    "fine_tune_epochs": 10,
+    "learning_rate": 0.0005,
+    "min_macro_f1": 0.7
+  }
+}
