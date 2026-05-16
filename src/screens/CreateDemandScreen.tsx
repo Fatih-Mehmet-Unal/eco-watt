@@ -211,7 +211,7 @@ const CreateDemandScreen: React.FC<CreateDemandScreenProps> = ({ navigation }) =
             onPress={handleSubmitDemand}
             disabled={!selectedHour || !demandKWh || loading}>
             {loading ? (
-              <ActivityIndicator color="white" />
+              <ActivityIndicator color={Colors.white} />
             ) : (
               <Text style={styles.submitButtonText}>Talep Oluştur</Text>
             )}
@@ -239,16 +239,16 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   backButtonText: {
-    color: 'white',
+    color: Colors.white,
     fontSize: 16,
   },
   title: {
-    color: 'white',
+    color: Colors.white,
     fontSize: 24,
     fontWeight: 'bold',
   },
   companyInfo: {
-    backgroundColor: 'white',
+    backgroundColor: Colors.white,
     padding: 20,
     marginBottom: 20,
     elevation: 2,
@@ -264,11 +264,11 @@ const styles = StyleSheet.create({
   },
   companyCode: {
     fontSize: 14,
-    color: '#666',
+    color: Colors.secondary,
     marginTop: 4,
   },
   form: {
-    backgroundColor: 'white',
+    backgroundColor: Colors.white,
     margin: 20,
     padding: 20,
     borderRadius: 10,
@@ -294,7 +294,7 @@ const styles = StyleSheet.create({
     marginRight: 10,
     minWidth: 100,
     alignItems: 'center',
-    backgroundColor: 'white',
+    backgroundColor: Colors.white,
   },
   hourButtonSelected: {
     backgroundColor: Colors.buttonSelected,
@@ -311,6 +311,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
     fontWeight: '500',
+    color: Colors.secondary,
   },
   inputGroup: {
     marginBottom: 20,
@@ -328,6 +329,7 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 16,
     backgroundColor: Colors.inputBackground,
+    color: Colors.black,
   },
   textArea: {
     height: 80,
@@ -347,7 +349,7 @@ const styles = StyleSheet.create({
   },
   priceText: {
     fontSize: 14,
-    color: '#666',
+    color: Colors.secondary,
     marginBottom: 4,
   },
   totalPrice: {
@@ -370,7 +372,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.buttonDisabled,
   },
   submitButtonText: {
-    color: 'white',
+    color: Colors.white,
     fontSize: 18,
     fontWeight: 'bold',
   },

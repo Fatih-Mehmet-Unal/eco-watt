@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  RefreshControl, // 1. RefreshControl bileşeni eklendi
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../types/navigation';
@@ -32,6 +33,7 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
   const [electricityPrices, setElectricityPrices] = useState<ElectricityPrice[]>([]);
   const [greenPoints, setGreenPoints] = useState<UserGreenPoints | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false); // 2. Yenileme durumu için state eklendi
 
   // Bireysel mi kurumsal mı kontrol et
   const isIndividual = !user?.user_metadata?.company_code;
@@ -44,9 +46,13 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
     loadData();
   }, []);
 
-  const loadData = async () => {
+  const loadData = async (isRefreshingCall = false) => {
     try {
-      setLoading(true);
+      // Eğer pull-to-refresh ile tetiklenmediyse ilk açılış loading ekranını göster
+      if (!isRefreshingCall) {
+        setLoading(true);
+      }
+      
       // İlk olarak güncel elektrik fiyatlarını çek (fiyatlar talep maliyetini hesaplamak için gerekli)
       const prices = await electricityPriceService.getCurrentPrices();
       setElectricityPrices(prices);
@@ -148,6 +154,13 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
     }
   };
 
+  // 3. Yenileme tetiklendiğinde çalışan fonksiyon
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadData(true); // Verileri çekerken tam ekran loading'e düşmesini engellemek için true gönderiyoruz
+    setRefreshing(false);
+  };
+
   const handleLogout = () => {
     Alert.alert(
       'Çıkış',
@@ -205,7 +218,18 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
   }
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView 
+      style={styles.container}
+      // 4. RefreshControl ScrollView'a entegre edildi
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          colors={[Colors.primary]} // Android için yüklenme halkası rengi
+          tintColor={Colors.primary} // iOS için yüklenme halkası rengi
+        />
+      }
+    >
       {/* Header - Kurumsal için şirket bilgisi, bireysel için kullanıcı adı */}
       <View style={styles.header}>
         <View>
@@ -254,7 +278,7 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
             <View style={styles.ecoSection}>
               <HabitCheckIn
                 userId={user.id}
-                onCheckIn={() => loadData()}
+                onCheckIn={() => loadData(true)} // Check-in sonrası yenilerken tam ekran loading olmasın
               />
             </View>
           )}
